@@ -3,9 +3,12 @@ package conf
 import (
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/goccy/go-yaml"
 )
@@ -35,9 +38,26 @@ type Logger struct {
 	Level      string `yaml:"level"`
 }
 
+type HTTP struct {
+	Port                 string        `yaml:"port"`
+	MaxConnections       int           `yaml:"max_connections"`
+	ReadTimeout          time.Duration `yaml:"read_timeout"`
+	ReadHeaderTimeout    time.Duration `yaml:"read_header_timeout"`
+	WriteTimeout         time.Duration `yaml:"write_timeout"`
+	IdleTimeout          time.Duration `yaml:"idle_timeout"`
+	MaxHeaderBytes       int           `yaml:"max_header_bytes"`
+	ShutdownTimeout      time.Duration `yaml:"shutdown_timeout"`
+	TrustedProxies       []string      `yaml:"trusted_proxies"`
+	EnablePProf          bool          `yaml:"enable_pprof"`
+	BlockProfileRate     int           `yaml:"block_profile_rate"`
+	MutexProfileFraction int           `yaml:"mutex_profile_fraction"`
+	CORSAllowOrigins     []string      `yaml:"cors_allow_origins"`
+}
+
 type Config struct {
 	Env    iamEnv `yaml:"env"`
 	Logger Logger `yaml:"logger"`
+	HTTP   HTTP   `yaml:"http"`
 }
 
 func (c *Config) IsDev() bool {
@@ -56,6 +76,28 @@ func defaultConfig() *Config {
 			// debug < info < warn < error < fatal
 			// info 时会记录到 info & warn & error & fatal
 			Level: "info",
+		},
+		HTTP: HTTP{
+			Port:              "26824",
+			MaxConnections:    0,
+			ReadTimeout:       5 * time.Second,
+			ReadHeaderTimeout: 5 * time.Second,
+			WriteTimeout:      10 * time.Second,
+			IdleTimeout:       60 * time.Second,
+			MaxHeaderBytes:    1 << 20, // 1MB
+			ShutdownTimeout:   10 * time.Second,
+			TrustedProxies: []string{
+				"127.0.0.0/8",    // IPv4 Loopback
+				"::1/128",        // IPv6 Loopback
+				"10.0.0.0/8",     // Private Network
+				"172.16.0.0/12",  // Private Network / Docker Default Bridge
+				"192.168.0.0/16", // Private Network
+				"fc00::/7",       // Unique Local Address (IPv6)
+			},
+			EnablePProf:          false,
+			BlockProfileRate:     0,
+			MutexProfileFraction: 0,
+			CORSAllowOrigins:     nil,
 		},
 	}
 }
@@ -132,6 +174,60 @@ func validate(cfg *Config) error {
 		// valid levels
 	default:
 		errs = append(errs, fmt.Errorf("logger.level %q is invalid (allowed: debug, info, warn, error)", cfg.Logger.Level))
+	}
+
+	// HTTP
+	if cfg.HTTP.Port == "" {
+		errs = append(errs, errors.New("http.port must not be empty"))
+	}
+	if cfg.HTTP.MaxConnections < 0 {
+		errs = append(errs, errors.New("http.max_connections cannot be negative"))
+	}
+	if cfg.HTTP.ReadTimeout <= 0 {
+		errs = append(errs, errors.New("http.read_timeout must be positive"))
+	}
+	if cfg.HTTP.ReadHeaderTimeout <= 0 {
+		errs = append(errs, errors.New("http.read_header_timeout must be positive"))
+	}
+	if cfg.HTTP.WriteTimeout <= 0 {
+		errs = append(errs, errors.New("http.write_timeout must be positive"))
+	}
+	if cfg.HTTP.IdleTimeout <= 0 {
+		errs = append(errs, errors.New("http.idle_timeout must be positive"))
+	}
+	if cfg.HTTP.ShutdownTimeout <= 0 {
+		errs = append(errs, errors.New("http.shutdown_timeout must be positive"))
+	}
+	if cfg.HTTP.MaxHeaderBytes <= 0 {
+		errs = append(errs, errors.New("http.max_header_bytes must be positive"))
+	}
+	if cfg.HTTP.BlockProfileRate < 0 {
+		errs = append(errs, errors.New("http.block_profile_rate cannot be negative"))
+	}
+	if cfg.HTTP.MutexProfileFraction < 0 {
+		errs = append(errs, errors.New("http.mutex_profile_fraction cannot be negative"))
+	}
+	// TrustedProxies validation
+	if len(cfg.HTTP.TrustedProxies) == 0 {
+		errs = append(errs, errors.New("http.trusted_proxies cannot be empty"))
+	} else {
+		for i, cidr := range cfg.HTTP.TrustedProxies {
+			c := strings.TrimSpace(cidr)
+			if c == "" {
+				errs = append(errs, fmt.Errorf("http.trusted_proxies[%d] cannot be empty", i))
+				continue
+			}
+
+			if !strings.Contains(c, "/") {
+				if ip := net.ParseIP(c); ip == nil {
+					errs = append(errs, fmt.Errorf("http.trusted_proxies[%d] %q is not a valid IP or CIDR block", i, cidr))
+				}
+			} else {
+				if _, _, err := net.ParseCIDR(c); err != nil {
+					errs = append(errs, fmt.Errorf("http.trusted_proxies[%d] %q is not a valid CIDR block: %v", i, cidr, err))
+				}
+			}
+		}
 	}
 
 	return errors.Join(errs...)
