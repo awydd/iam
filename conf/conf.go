@@ -54,10 +54,28 @@ type HTTP struct {
 	CORSAllowOrigins     []string      `yaml:"cors_allow_origins"`
 }
 
+type Redis struct {
+	Addr            string        `yaml:"addr"`
+	Password        string        `yaml:"password"`
+	DB              int           `yaml:"db"`
+	Prefix          string        `yaml:"prefix"`
+	PoolSize        int           `yaml:"pool_size"`
+	MinIdleConns    int           `yaml:"min_idle_conns"`
+	MaxIdleConns    int           `yaml:"max_idle_conns"`
+	MaxRetries      int           `yaml:"max_retries"`
+	DialTimeout     time.Duration `yaml:"dial_timeout"`
+	ReadTimeout     time.Duration `yaml:"read_timeout"`
+	WriteTimeout    time.Duration `yaml:"write_timeout"`
+	PoolTimeout     time.Duration `yaml:"pool_timeout"`
+	ConnMaxIdleTime time.Duration `yaml:"conn_max_idle_time"`
+	ConnMaxLifetime time.Duration `yaml:"conn_max_lifetime"`
+}
+
 type Config struct {
 	Env    iamEnv `yaml:"env"`
 	Logger Logger `yaml:"logger"`
 	HTTP   HTTP   `yaml:"http"`
+	Redis  Redis  `yaml:"redis"`
 }
 
 func (c *Config) IsDev() bool {
@@ -98,6 +116,22 @@ func defaultConfig() *Config {
 			BlockProfileRate:     0,
 			MutexProfileFraction: 0,
 			CORSAllowOrigins:     nil,
+		},
+		Redis: Redis{
+			Addr:            "127.0.0.1:6379",
+			Password:        "",
+			DB:              0,
+			Prefix:          "iam",
+			PoolSize:        100,
+			MinIdleConns:    10,
+			MaxIdleConns:    50,
+			MaxRetries:      3,
+			DialTimeout:     5 * time.Second,
+			ReadTimeout:     3 * time.Second,
+			WriteTimeout:    3 * time.Second,
+			PoolTimeout:     4 * time.Second,
+			ConnMaxIdleTime: 30 * time.Minute,
+			ConnMaxLifetime: time.Hour,
 		},
 	}
 }
@@ -227,6 +261,56 @@ func validate(cfg *Config) error {
 					errs = append(errs, fmt.Errorf("http.trusted_proxies[%d] %q is not a valid CIDR block: %v", i, cidr, err))
 				}
 			}
+		}
+
+		// Redis
+		if cfg.Redis.Addr == "" {
+			errs = append(errs, errors.New("redis.addr must not be empty"))
+		}
+		if cfg.Redis.DB < 0 {
+			errs = append(errs, errors.New("redis.db cannot be negative"))
+		}
+		if cfg.Redis.PoolSize <= 0 {
+			errs = append(errs, errors.New("redis.pool_size must be greater than 0"))
+		}
+		if cfg.Redis.MinIdleConns < 0 {
+			errs = append(errs, errors.New("redis.min_idle_conns cannot be negative"))
+		}
+		if cfg.Redis.MinIdleConns > cfg.Redis.PoolSize {
+			errs = append(errs, errors.New("redis.min_idle_conns cannot exceed pool_size"))
+		}
+		if cfg.Redis.MaxIdleConns < 0 {
+			errs = append(errs, errors.New("redis.max_idle_conns cannot be negative"))
+		}
+		if cfg.Redis.MaxIdleConns > 0 && cfg.Redis.MaxIdleConns > cfg.Redis.PoolSize {
+			errs = append(errs, errors.New("redis.max_idle_conns cannot exceed pool_size"))
+		}
+		if cfg.Redis.MaxIdleConns > 0 && cfg.Redis.MinIdleConns > cfg.Redis.MaxIdleConns {
+			errs = append(errs, errors.New("redis.min_idle_conns cannot exceed max_idle_conns"))
+		}
+		if cfg.Redis.MaxRetries < 0 {
+			errs = append(errs, errors.New("redis.max_retries cannot be negative"))
+		}
+		if cfg.Redis.DialTimeout <= 0 {
+			errs = append(errs, errors.New("redis.dial_timeout must be positive"))
+		}
+		if cfg.Redis.ReadTimeout <= 0 {
+			errs = append(errs, errors.New("redis.read_timeout must be positive"))
+		}
+		if cfg.Redis.WriteTimeout <= 0 {
+			errs = append(errs, errors.New("redis.write_timeout must be positive"))
+		}
+		if cfg.Redis.PoolTimeout <= 0 {
+			errs = append(errs, errors.New("redis.pool_timeout must be positive"))
+		}
+		if cfg.Redis.ConnMaxIdleTime < 0 {
+			errs = append(errs, errors.New("redis.conn_max_idle_time cannot be negative"))
+		}
+		if cfg.Redis.ConnMaxLifetime < 0 {
+			errs = append(errs, errors.New("redis.conn_max_lifetime cannot be negative"))
+		}
+		if cfg.Redis.ConnMaxLifetime > 0 && cfg.Redis.ConnMaxIdleTime > cfg.Redis.ConnMaxLifetime {
+			errs = append(errs, errors.New("redis.conn_max_idle_time should not exceed conn_max_lifetime"))
 		}
 	}
 
