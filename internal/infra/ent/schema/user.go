@@ -66,6 +66,10 @@ func (User) Fields() []ent.Field {
 			SchemaType(map[string]string{
 				"mysql": "datetime(3)",
 			}),
+
+		field.Bool("is_system").
+			Immutable().
+			Default(false),
 	}
 }
 
