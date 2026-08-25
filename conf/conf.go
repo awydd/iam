@@ -107,12 +107,23 @@ func (d *Database) DSN() string {
 	)
 }
 
+type Password struct {
+	Time           uint32        `yaml:"time"`
+	Memory         uint32        `yaml:"memory"`
+	Threads        uint8         `yaml:"threads"`
+	KeyLength      uint32        `yaml:"key_length"`
+	SaltLen        uint32        `yaml:"salt_len"`
+	MaxConcurrency int           `yaml:"max_concurrency"`
+	WaitTimeout    time.Duration `yaml:"wait_timeout"`
+}
+
 type Config struct {
 	Env      iamEnv   `yaml:"env"`
 	Logger   Logger   `yaml:"logger"`
 	HTTP     HTTP     `yaml:"http"`
 	Redis    Redis    `yaml:"redis"`
 	Database Database `yaml:"database"`
+	Password Password `yaml:"password"`
 }
 
 func (c *Config) IsDev() bool {
@@ -181,6 +192,15 @@ func defaultConfig() *Config {
 			MaxOpenConns: 100,
 			MaxLifetime:  1 * time.Hour,
 			MaxIdleTime:  5 * time.Minute,
+		},
+		Password: Password{
+			Time:           3,
+			Memory:         32 * 1024, // 32MB
+			Threads:        2,
+			KeyLength:      32,
+			SaltLen:        16,
+			MaxConcurrency: 8,
+			WaitTimeout:    5 * time.Second,
 		},
 	}
 }
@@ -390,6 +410,29 @@ func validate(cfg *Config) error {
 	}
 	if cfg.Database.MaxIdleTime < 0 {
 		errs = append(errs, errors.New("database.max_idle_time cannot be negative"))
+	}
+
+	// 密钥
+	if cfg.Password.Time == 0 {
+		errs = append(errs, errors.New("password.time must be greater than 0"))
+	}
+	if cfg.Password.Memory == 0 {
+		errs = append(errs, errors.New("password.memory must be greater than 0"))
+	}
+	if cfg.Password.Threads == 0 {
+		errs = append(errs, errors.New("password.threads must be greater than 0"))
+	}
+	if cfg.Password.KeyLength == 0 {
+		errs = append(errs, errors.New("password.key_length must be greater than 0"))
+	}
+	if cfg.Password.SaltLen == 0 {
+		errs = append(errs, errors.New("password.salt_len must be greater than 0"))
+	}
+	if cfg.Password.MaxConcurrency <= 0 {
+		errs = append(errs, errors.New("password.max_concurrency must be greater than 0"))
+	}
+	if cfg.Password.WaitTimeout <= 0 {
+		errs = append(errs, errors.New("password.wait_timeout must be positive"))
 	}
 
 	return errors.Join(errs...)
