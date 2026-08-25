@@ -134,6 +134,16 @@ type Cookie struct {
 	Secret   string `yaml:"secret"`
 }
 
+const (
+	DefaultKeypairVerifyCacheTTL  = 5 * time.Minute
+	DefaultKeypairSigningCacheTTL = 10 * time.Minute
+)
+
+type Keypair struct {
+	VerifyCacheTTL  time.Duration `yaml:"verify_cache_ttl"`
+	SigningCacheTTL time.Duration `yaml:"signing_cache_ttl"`
+}
+
 type Config struct {
 	Env      iamEnv   `yaml:"env"`
 	Logger   Logger   `yaml:"logger"`
@@ -143,6 +153,7 @@ type Config struct {
 	Password Password `yaml:"password"`
 	JWT      JWT      `yaml:"jwt"`
 	Cookie   Cookie   `yaml:"cookie"`
+	Keypair  Keypair  `yaml:"keypair"`
 }
 
 func (c *Config) IsDev() bool {
@@ -243,6 +254,10 @@ func defaultConfig() *Config {
 			HttpOnly: true,
 			SameSite: "lax",
 			Secret:   mustGenKey(),
+		},
+		Keypair: Keypair{
+			VerifyCacheTTL:  DefaultKeypairVerifyCacheTTL,
+			SigningCacheTTL: DefaultKeypairSigningCacheTTL,
 		},
 	}
 }
@@ -454,7 +469,7 @@ func validate(cfg *Config) error {
 		errs = append(errs, errors.New("database.max_idle_time cannot be negative"))
 	}
 
-	// 密钥
+	// 密码
 	if cfg.Password.Time == 0 {
 		errs = append(errs, errors.New("password.time must be greater than 0"))
 	}
@@ -475,6 +490,14 @@ func validate(cfg *Config) error {
 	}
 	if cfg.Password.WaitTimeout <= 0 {
 		errs = append(errs, errors.New("password.wait_timeout must be positive"))
+	}
+
+	// 密钥
+	if cfg.Keypair.VerifyCacheTTL < 0 {
+		errs = append(errs, errors.New("keypair.verify_cache_ttl must not be negative"))
+	}
+	if cfg.Keypair.SigningCacheTTL < 0 {
+		errs = append(errs, errors.New("keypair.signing_cache_ttl must not be negative"))
 	}
 
 	return errors.Join(errs...)

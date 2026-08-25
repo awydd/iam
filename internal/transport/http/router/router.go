@@ -5,6 +5,7 @@ import (
 
 	"github.com/awydd/iam/conf"
 	"github.com/awydd/iam/internal/transport/http/middleware"
+	"github.com/awydd/iam/internal/wire"
 	"github.com/gin-gonic/gin"
 )
 
@@ -12,7 +13,7 @@ func healthCheck(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
-func New(cfg *conf.HTTP) *gin.Engine {
+func New(cfg *conf.HTTP, app *wire.App) *gin.Engine {
 	isDev := conf.Get().IsDev()
 	if isDev {
 		gin.SetMode(gin.DebugMode)
@@ -40,5 +41,11 @@ func New(cfg *conf.HTTP) *gin.Engine {
 		registerPProf(r, cfg.BlockProfileRate, cfg.MutexProfileFraction)
 	}
 
+	registerRoutes(r, app)
+
 	return r
+}
+
+func registerRoutes(r *gin.Engine, app *wire.App) {
+	r.GET("/.well-known/jwks.json", app.Keypair.JWKS)
 }

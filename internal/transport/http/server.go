@@ -10,6 +10,7 @@ import (
 	"github.com/awydd/iam/conf"
 	"github.com/awydd/iam/internal/logger"
 	"github.com/awydd/iam/internal/transport/http/router"
+	"github.com/awydd/iam/internal/wire"
 	"golang.org/x/net/netutil"
 )
 
@@ -19,8 +20,8 @@ type Server struct {
 	shutdownTO time.Duration
 }
 
-func New(cfg *conf.HTTP) (*Server, error) {
-	engine := router.New(cfg)
+func New(cfg *conf.HTTP, app *wire.App) (*Server, error) {
+	engine := router.New(cfg, app)
 
 	addr := ":" + cfg.Port
 	ln, err := net.Listen("tcp", addr)

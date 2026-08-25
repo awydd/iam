@@ -7,8 +7,10 @@ import (
 	"syscall"
 
 	"github.com/awydd/iam/conf"
+	"github.com/awydd/iam/internal/infra/database"
 	"github.com/awydd/iam/internal/logger"
 	httpserver "github.com/awydd/iam/internal/transport/http"
+	"github.com/awydd/iam/internal/wire"
 	"github.com/spf13/cobra"
 )
 
@@ -42,7 +44,8 @@ func server() error {
 	)
 	defer stop()
 
-	srv, err := httpserver.New(&conf.Get().HTTP)
+	app := wire.InitApp(database.DB())
+	srv, err := httpserver.New(&conf.Get().HTTP, app)
 	if err != nil {
 		return fmt.Errorf("create http server failed: %w", err)
 	}

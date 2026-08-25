@@ -36,3 +36,6 @@ go.work.sum
 
 # ent
 /internal/infra/ent/db
+
+# wire
+/internal/wire/*_gen.go
