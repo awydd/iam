@@ -117,6 +117,13 @@ type Password struct {
 	WaitTimeout    time.Duration `yaml:"wait_timeout"`
 }
 
+type JWT struct {
+	Issuer          string        `yaml:"issuer"`
+	Audience        string        `yaml:"audience"`
+	AccessTokenTTL  time.Duration `yaml:"access_token_ttl"`
+	RefreshTokenTTL time.Duration `yaml:"refresh_token_ttl"`
+}
+
 type Config struct {
 	Env      iamEnv   `yaml:"env"`
 	Logger   Logger   `yaml:"logger"`
@@ -124,6 +131,7 @@ type Config struct {
 	Redis    Redis    `yaml:"redis"`
 	Database Database `yaml:"database"`
 	Password Password `yaml:"password"`
+	JWT      JWT      `yaml:"jwt"`
 }
 
 func (c *Config) IsDev() bool {
@@ -201,6 +209,12 @@ func defaultConfig() *Config {
 			SaltLen:        16,
 			MaxConcurrency: 8,
 			WaitTimeout:    5 * time.Second,
+		},
+		JWT: JWT{
+			Issuer:          "iam",
+			Audience:        "",
+			AccessTokenTTL:  2 * time.Hour,
+			RefreshTokenTTL: 7 * 24 * time.Hour,
 		},
 	}
 }
