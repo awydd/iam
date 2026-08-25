@@ -10,6 +10,7 @@ import (
 	"github.com/awydd/iam/internal/infra/database"
 	"github.com/awydd/iam/internal/logger"
 	"github.com/awydd/iam/pkg/password"
+	"github.com/awydd/iam/pkg/utils"
 )
 
 func setup() error {
@@ -18,6 +19,12 @@ func setup() error {
 	}
 
 	cfg := conf.Get()
+
+	if len(cfg.HTTP.TrustedProxies) > 0 {
+		utils.SetTrustedProxies(cfg.HTTP.TrustedProxies)
+	}
+
+	utils.InitCookieUtil(cfg.Cookie)
 
 	if err := logger.Init(cfg.Logger); err != nil {
 		return fmt.Errorf("failed to init logger: %w", err)

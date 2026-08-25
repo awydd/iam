@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/awydd/iam/pkg/random"
 	"github.com/goccy/go-yaml"
 )
 
@@ -124,6 +125,15 @@ type JWT struct {
 	RefreshTokenTTL time.Duration `yaml:"refresh_token_ttl"`
 }
 
+type Cookie struct {
+	Domain   string `yaml:"domain"`
+	Path     string `yaml:"path"`
+	Secure   bool   `yaml:"secure"`
+	HttpOnly bool   `yaml:"http_only"`
+	SameSite string `yaml:"same_site"` // lax, strict, none
+	Secret   string `yaml:"secret"`
+}
+
 type Config struct {
 	Env      iamEnv   `yaml:"env"`
 	Logger   Logger   `yaml:"logger"`
@@ -132,6 +142,7 @@ type Config struct {
 	Database Database `yaml:"database"`
 	Password Password `yaml:"password"`
 	JWT      JWT      `yaml:"jwt"`
+	Cookie   Cookie   `yaml:"cookie"`
 }
 
 func (c *Config) IsDev() bool {
@@ -139,6 +150,15 @@ func (c *Config) IsDev() bool {
 }
 
 func defaultConfig() *Config {
+	mustGenKey := func() string {
+		if s, err := random.Alphanumeric(32); err == nil {
+			return s
+		}
+		// openssl rand -base64 48 | tr -dc 'a-zA-Z0-9' | head -c 32
+		// head -c 32 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 32
+		return "B3iNF9vrTob6YVsbp8wP9BgXfU3WkO3D"
+	}
+
 	return &Config{
 		Env: envProd,
 		Logger: Logger{
@@ -215,6 +235,14 @@ func defaultConfig() *Config {
 			Audience:        "",
 			AccessTokenTTL:  2 * time.Hour,
 			RefreshTokenTTL: 7 * 24 * time.Hour,
+		},
+		Cookie: Cookie{
+			Domain:   "",
+			Path:     "/",
+			Secure:   true,
+			HttpOnly: true,
+			SameSite: "lax",
+			Secret:   mustGenKey(),
 		},
 	}
 }
