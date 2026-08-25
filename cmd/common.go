@@ -1,10 +1,13 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
+	"time"
 
 	"github.com/awydd/iam/conf"
 	"github.com/awydd/iam/internal/infra/cache/redis"
+	"github.com/awydd/iam/internal/infra/database"
 	"github.com/awydd/iam/internal/logger"
 )
 
@@ -19,6 +22,16 @@ func setup() error {
 		return fmt.Errorf("failed to init logger: %w", err)
 	}
 
+	if err := database.Init(cfg.Database, cfg.IsDev()); err != nil {
+		return fmt.Errorf("failed to init database: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := database.Migrate(ctx); err != nil {
+		return fmt.Errorf("failed to run database migration: %w", err)
+	}
+
 	if err := redis.Init(cfg.Redis); err != nil {
 		return fmt.Errorf("failed to init redis: %w", err)
 	}
@@ -28,6 +41,10 @@ func setup() error {
 }
 
 func release() {
+	if err := database.Close(); err != nil {
+		logger.Error("failed to close database: %s", err)
+	}
+
 	if err := redis.Close(); err != nil {
 		logger.Error("failed to close redis: %s", err)
 	}

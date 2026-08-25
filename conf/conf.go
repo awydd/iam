@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -71,11 +72,47 @@ type Redis struct {
 	ConnMaxLifetime time.Duration `yaml:"conn_max_lifetime"`
 }
 
+type Database struct {
+	Host         string        `yaml:"host"`
+	Port         string        `yaml:"port"`
+	User         string        `yaml:"user"`
+	Password     string        `yaml:"password"`
+	DBName       string        `yaml:"db_name"`
+	Timezone     string        `yaml:"timezone"`
+	MaxIdleConns int           `yaml:"max_idle_conns"`
+	MaxOpenConns int           `yaml:"max_open_conns"`
+	MaxLifetime  time.Duration `yaml:"max_lifetime"`
+	MaxIdleTime  time.Duration `yaml:"max_idle_time"`
+}
+
+func (d *Database) DSN() string {
+	tz := d.Timezone
+	if tz == "" {
+		tz = "Local"
+	}
+
+	params := url.Values{}
+	params.Set("charset", "utf8mb4")
+	params.Set("parseTime", "True")
+	params.Set("loc", tz)
+
+	return fmt.Sprintf(
+		"%s:%s@tcp(%s:%s)/%s?%s",
+		d.User,
+		d.Password,
+		d.Host,
+		d.Port,
+		d.DBName,
+		params.Encode(),
+	)
+}
+
 type Config struct {
-	Env    iamEnv `yaml:"env"`
-	Logger Logger `yaml:"logger"`
-	HTTP   HTTP   `yaml:"http"`
-	Redis  Redis  `yaml:"redis"`
+	Env      iamEnv   `yaml:"env"`
+	Logger   Logger   `yaml:"logger"`
+	HTTP     HTTP     `yaml:"http"`
+	Redis    Redis    `yaml:"redis"`
+	Database Database `yaml:"database"`
 }
 
 func (c *Config) IsDev() bool {
@@ -132,6 +169,18 @@ func defaultConfig() *Config {
 			PoolTimeout:     4 * time.Second,
 			ConnMaxIdleTime: 30 * time.Minute,
 			ConnMaxLifetime: time.Hour,
+		},
+		Database: Database{
+			Host:         "127.0.0.1",
+			Port:         "3306",
+			User:         "root",
+			Password:     "",
+			DBName:       "iam",
+			Timezone:     "Local",
+			MaxIdleConns: 10,
+			MaxOpenConns: 100,
+			MaxLifetime:  1 * time.Hour,
+			MaxIdleTime:  5 * time.Minute,
 		},
 	}
 }
@@ -262,56 +311,85 @@ func validate(cfg *Config) error {
 				}
 			}
 		}
+	}
 
-		// Redis
-		if cfg.Redis.Addr == "" {
-			errs = append(errs, errors.New("redis.addr must not be empty"))
-		}
-		if cfg.Redis.DB < 0 {
-			errs = append(errs, errors.New("redis.db cannot be negative"))
-		}
-		if cfg.Redis.PoolSize <= 0 {
-			errs = append(errs, errors.New("redis.pool_size must be greater than 0"))
-		}
-		if cfg.Redis.MinIdleConns < 0 {
-			errs = append(errs, errors.New("redis.min_idle_conns cannot be negative"))
-		}
-		if cfg.Redis.MinIdleConns > cfg.Redis.PoolSize {
-			errs = append(errs, errors.New("redis.min_idle_conns cannot exceed pool_size"))
-		}
-		if cfg.Redis.MaxIdleConns < 0 {
-			errs = append(errs, errors.New("redis.max_idle_conns cannot be negative"))
-		}
-		if cfg.Redis.MaxIdleConns > 0 && cfg.Redis.MaxIdleConns > cfg.Redis.PoolSize {
-			errs = append(errs, errors.New("redis.max_idle_conns cannot exceed pool_size"))
-		}
-		if cfg.Redis.MaxIdleConns > 0 && cfg.Redis.MinIdleConns > cfg.Redis.MaxIdleConns {
-			errs = append(errs, errors.New("redis.min_idle_conns cannot exceed max_idle_conns"))
-		}
-		if cfg.Redis.MaxRetries < 0 {
-			errs = append(errs, errors.New("redis.max_retries cannot be negative"))
-		}
-		if cfg.Redis.DialTimeout <= 0 {
-			errs = append(errs, errors.New("redis.dial_timeout must be positive"))
-		}
-		if cfg.Redis.ReadTimeout <= 0 {
-			errs = append(errs, errors.New("redis.read_timeout must be positive"))
-		}
-		if cfg.Redis.WriteTimeout <= 0 {
-			errs = append(errs, errors.New("redis.write_timeout must be positive"))
-		}
-		if cfg.Redis.PoolTimeout <= 0 {
-			errs = append(errs, errors.New("redis.pool_timeout must be positive"))
-		}
-		if cfg.Redis.ConnMaxIdleTime < 0 {
-			errs = append(errs, errors.New("redis.conn_max_idle_time cannot be negative"))
-		}
-		if cfg.Redis.ConnMaxLifetime < 0 {
-			errs = append(errs, errors.New("redis.conn_max_lifetime cannot be negative"))
-		}
-		if cfg.Redis.ConnMaxLifetime > 0 && cfg.Redis.ConnMaxIdleTime > cfg.Redis.ConnMaxLifetime {
-			errs = append(errs, errors.New("redis.conn_max_idle_time should not exceed conn_max_lifetime"))
-		}
+	// Redis
+	if cfg.Redis.Addr == "" {
+		errs = append(errs, errors.New("redis.addr must not be empty"))
+	}
+	if cfg.Redis.DB < 0 {
+		errs = append(errs, errors.New("redis.db cannot be negative"))
+	}
+	if cfg.Redis.PoolSize <= 0 {
+		errs = append(errs, errors.New("redis.pool_size must be greater than 0"))
+	}
+	if cfg.Redis.MinIdleConns < 0 {
+		errs = append(errs, errors.New("redis.min_idle_conns cannot be negative"))
+	}
+	if cfg.Redis.MinIdleConns > cfg.Redis.PoolSize {
+		errs = append(errs, errors.New("redis.min_idle_conns cannot exceed pool_size"))
+	}
+	if cfg.Redis.MaxIdleConns < 0 {
+		errs = append(errs, errors.New("redis.max_idle_conns cannot be negative"))
+	}
+	if cfg.Redis.MaxIdleConns > 0 && cfg.Redis.MaxIdleConns > cfg.Redis.PoolSize {
+		errs = append(errs, errors.New("redis.max_idle_conns cannot exceed pool_size"))
+	}
+	if cfg.Redis.MaxIdleConns > 0 && cfg.Redis.MinIdleConns > cfg.Redis.MaxIdleConns {
+		errs = append(errs, errors.New("redis.min_idle_conns cannot exceed max_idle_conns"))
+	}
+	if cfg.Redis.MaxRetries < 0 {
+		errs = append(errs, errors.New("redis.max_retries cannot be negative"))
+	}
+	if cfg.Redis.DialTimeout <= 0 {
+		errs = append(errs, errors.New("redis.dial_timeout must be positive"))
+	}
+	if cfg.Redis.ReadTimeout <= 0 {
+		errs = append(errs, errors.New("redis.read_timeout must be positive"))
+	}
+	if cfg.Redis.WriteTimeout <= 0 {
+		errs = append(errs, errors.New("redis.write_timeout must be positive"))
+	}
+	if cfg.Redis.PoolTimeout <= 0 {
+		errs = append(errs, errors.New("redis.pool_timeout must be positive"))
+	}
+	if cfg.Redis.ConnMaxIdleTime < 0 {
+		errs = append(errs, errors.New("redis.conn_max_idle_time cannot be negative"))
+	}
+	if cfg.Redis.ConnMaxLifetime < 0 {
+		errs = append(errs, errors.New("redis.conn_max_lifetime cannot be negative"))
+	}
+	if cfg.Redis.ConnMaxLifetime > 0 && cfg.Redis.ConnMaxIdleTime > cfg.Redis.ConnMaxLifetime {
+		errs = append(errs, errors.New("redis.conn_max_idle_time should not exceed conn_max_lifetime"))
+	}
+
+	// 数据库
+	if cfg.Database.Host == "" {
+		errs = append(errs, errors.New("database.host must not be empty"))
+	}
+	if cfg.Database.Port == "" {
+		errs = append(errs, errors.New("database.port must not be empty"))
+	}
+	if cfg.Database.User == "" {
+		errs = append(errs, errors.New("database.user must not be empty"))
+	}
+	if cfg.Database.DBName == "" {
+		errs = append(errs, errors.New("database.db_name must not be empty"))
+	}
+	if cfg.Database.MaxIdleConns < 0 {
+		errs = append(errs, errors.New("database.max_idle_conns cannot be negative"))
+	}
+	if cfg.Database.MaxOpenConns <= 0 {
+		errs = append(errs, errors.New("database.max_open_conns must be greater than 0"))
+	}
+	if cfg.Database.MaxIdleConns > cfg.Database.MaxOpenConns {
+		errs = append(errs, errors.New("database.max_idle_conns cannot exceed max_open_conns"))
+	}
+	if cfg.Database.MaxLifetime < 0 {
+		errs = append(errs, errors.New("database.max_lifetime cannot be negative"))
+	}
+	if cfg.Database.MaxIdleTime < 0 {
+		errs = append(errs, errors.New("database.max_idle_time cannot be negative"))
 	}
 
 	return errors.Join(errs...)
