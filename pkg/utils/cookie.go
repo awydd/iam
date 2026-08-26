@@ -135,10 +135,6 @@ func (c *CookieUtil) GetSigned(r *http.Request, name string) (string, error) {
 		return "", err
 	}
 
-	if len(c.config.Secret) == 0 {
-		return val, nil
-	}
-
 	parts := strings.Split(val, ".")
 	if len(parts) != 2 {
 		return "", ErrMalformedValue

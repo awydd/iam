@@ -2,6 +2,7 @@ package biz
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -200,4 +201,54 @@ func (b *UserBiz) createRefreshToken(ctx context.Context, userID, applicationID 
 		return "", err
 	}
 	return plain, nil
+}
+
+func (b *UserBiz) Logout(ctx context.Context, sessionID uuid.UUID, sid string) error {
+	if err := b.tokenStore.RevokeBySessionID(ctx, sessionID); err != nil {
+		return fmt.Errorf("revoke tokens: %w", err)
+	}
+	if err := b.invalidateSession(ctx, sessionID); err != nil {
+		logger.Error("invalidate session cache failed: %s", err)
+	}
+	if sid != "" {
+		if err := b.sessionCache.Del(ctx, sid); err != nil {
+			logger.Error("clear session failed: %s", err)
+		}
+	}
+	return nil
+}
+
+func (b *UserBiz) invalidateSession(ctx context.Context, sessionID uuid.UUID) error {
+	var errs []error
+	if err := b.tokenCache.DelAccess(ctx, sessionID); err != nil {
+		errs = append(errs, fmt.Errorf("del access cache: %w", err))
+	}
+	if err := b.tokenCache.DelRefresh(ctx, sessionID); err != nil {
+		errs = append(errs, fmt.Errorf("del refresh cache: %w", err))
+	}
+	if len(errs) > 0 {
+		return errors.Join(errs...)
+	}
+	return nil
+}
+
+type UserMeResp struct {
+	Username string    `json:"username"`
+	Email    string    `json:"email"`
+	UUID     uuid.UUID `json:"uuid"`
+	IsSystem bool      `json:"is_system"`
+}
+
+func (b *UserBiz) Me(ctx context.Context, userUUID uuid.UUID) (*UserMeResp, error) {
+	u, err := b.store.GetByUUID(ctx, userUUID)
+	if err != nil {
+		return nil, fmt.Errorf("get user by uuid: %w", err)
+	}
+
+	return &UserMeResp{
+		Username: u.Username,
+		Email:    u.Email,
+		UUID:     u.UUID,
+		IsSystem: u.IsSystem,
+	}, nil
 }

@@ -17,6 +17,11 @@ import (
 type App struct {
 	Keypair *handler.KeypairHandler
 	User    *handler.UserHandler
+
+	TokenBiz *biz.TokenBiz
+
+	JWTManager *jwt.Manager
+	TokenCache biz.TokenCache
 }
 
 var handlerSet = wire.NewSet(
@@ -27,6 +32,7 @@ var handlerSet = wire.NewSet(
 var bizSet = wire.NewSet(
 	biz.NewKeypairBiz,
 	biz.NewUserBiz,
+	biz.NewTokenBiz,
 )
 
 var storeSet = wire.NewSet(
@@ -41,6 +47,9 @@ var storeSet = wire.NewSet(
 
 	store.NewTokenStore,
 	wire.Bind(new(biz.TokenStore), new(*store.TokenStore)),
+
+	redis.NewLastActiveCache,
+	wire.Bind(new(biz.LastActiveCache), new(*redis.LastActiveCache)),
 )
 
 var cacheSet = wire.NewSet(

@@ -54,4 +54,10 @@ func registerRoutes(r *gin.Engine, app *wire.App) {
 	{
 		auth.POST("/login", app.User.Login)
 	}
+
+	protected := api.Group("")
+	protected.Use(middleware.Auth(app.JWTManager, app.TokenCache, app.TokenBiz))
+
+	protected.POST("/auth/logout", app.User.Logout)
+	protected.GET("/auth/me", app.User.Me)
 }

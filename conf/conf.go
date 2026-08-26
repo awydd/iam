@@ -515,6 +515,19 @@ func validate(cfg *Config) error {
 		errs = append(errs, errors.New("password.wait_timeout must be positive"))
 	}
 
+	// Cookie
+	if len(cfg.Cookie.Secret) == 0 {
+		errs = append(errs, errors.New("cookie.secret must not be empty"))
+	}
+	switch strings.ToLower(cfg.Cookie.SameSite) {
+	case "", "lax", "strict", "none":
+	default:
+		errs = append(errs, errors.New("cookie.samesite must be one of 'lax', 'strict', 'none'"))
+	}
+	if strings.EqualFold(cfg.Cookie.SameSite, "none") && !cfg.Cookie.Secure {
+		errs = append(errs, errors.New("cookie.secure must be true when cookie.samesite is 'none'"))
+	}
+
 	// 密钥
 	if cfg.Keypair.VerifyCacheTTL < 0 {
 		errs = append(errs, errors.New("keypair.verify_cache_ttl must not be negative"))

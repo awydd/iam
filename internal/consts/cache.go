@@ -1,8 +1,9 @@
 package consts
 
 const (
-	RedisAccessToken  = "rat"
-	RedisRefreshToken = "rrt"
+	RedisAccessToken        = "rat"
+	RedisRefreshToken       = "rrt"
+	RedisLastActiveThrottle = "last_active_throttle"
 )
 
 const (

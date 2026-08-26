@@ -38,3 +38,9 @@ type LoginAttemptCache interface {
 	IncrFailureByIP(ctx context.Context, ip string, window time.Duration) (int64, error)
 	ResetFailureByIP(ctx context.Context, ip string) error
 }
+
+const lastActiveThrottleWindow = 5 * time.Minute
+
+type LastActiveCache interface {
+	ShouldUpdate(ctx context.Context, sessionID uuid.UUID, window time.Duration) (bool, error)
+}
