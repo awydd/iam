@@ -48,4 +48,10 @@ func New(cfg *conf.HTTP, app *wire.App) *gin.Engine {
 
 func registerRoutes(r *gin.Engine, app *wire.App) {
 	r.GET("/.well-known/jwks.json", app.Keypair.JWKS)
+
+	api := r.Group(conf.Get().HTTP.APIBase())
+	auth := api.Group("/auth")
+	{
+		auth.POST("/login", app.User.Login)
+	}
 }

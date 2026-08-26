@@ -19,6 +19,27 @@ const (
 	InternalError
 )
 
+const (
+	InvalidParams Code = 2000 + iota
+)
+
+const (
+	AccountLocked Code = 3000 + iota
+	AccountNotActive
+	InvalidCredentials
+	RefreshTokenInvalid
+)
+
+const (
+	ClientNotFound Code = 4000 + iota
+	ClientDisabled
+	RedirectURIInvalid
+	ClientSecretWrong
+	UnsupportedGrantType
+	InvalidCodeVerifier
+	InvalidOrExpiredCode
+)
+
 type meta struct {
 	message    string
 	httpStatus int

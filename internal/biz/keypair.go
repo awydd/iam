@@ -161,6 +161,18 @@ func (b *KeypairBiz) lookupCache(kid string) (crypto.PublicKey, bool) {
 	return pub, ok
 }
 
+// 检查验证缓存是否过期，如果过期了则自动触发刷新
+func (b *KeypairBiz) refreshVerifyCacheIfExpired(ctx context.Context) error {
+	b.cache.mu.RLock()
+	expired := b.cache.verifyKeys == nil || time.Since(b.cache.loadedAt) >= b.verifyCacheTTL
+	b.cache.mu.RUnlock()
+
+	if expired {
+		return b.refreshVerifyCache(ctx)
+	}
+	return nil
+}
+
 func (b *KeypairBiz) refreshVerifyCache(ctx context.Context) error {
 	keys, err := b.store.ListVerifiable(ctx)
 	if err != nil {
@@ -204,29 +216,24 @@ func parsePublicKeyPEM(pemStr string) (crypto.PublicKey, error) {
 
 // 获取 JSON Web Key Set
 func (b *KeypairBiz) JWKS(ctx context.Context) (jwt.JWKSet, error) {
-	keys, err := b.store.ListVerifiable(ctx)
-	if err != nil {
-		logger.Error("list verifiable keys failed: %v", err)
-		return nil, fmt.Errorf("list verifiable keys: %w", err)
+	if err := b.refreshVerifyCacheIfExpired(ctx); err != nil {
+		return nil, err
 	}
 
-	set := jwk.NewSet()
-	for _, kp := range keys {
-		pub, err := parsePublicKeyPEM(kp.PublicKey)
-		if err != nil {
-			logger.Error("parse public key failed: kid=%s err=%v", kp.Kid, err)
-			return nil, fmt.Errorf("parse public key (kid=%s): %w", kp.Kid, err)
-		}
+	b.cache.mu.RLock()
+	defer b.cache.mu.RUnlock()
 
-		jwkObj, err := jwt.PublicKeyToJWK(kp.Kid, pub)
+	set := jwk.NewSet()
+	for kid, pub := range b.cache.verifyKeys {
+		jwkObj, err := jwt.PublicKeyToJWK(kid, pub)
 		if err != nil {
-			logger.Error("convert to jwk failed: kid=%s err=%v", kp.Kid, err)
-			return nil, fmt.Errorf("convert to jwk (kid=%s): %w", kp.Kid, err)
+			logger.Error("convert to jwk failed: kid=%s err=%v", kid, err)
+			return nil, fmt.Errorf("convert to jwk (kid=%s): %w", kid, err)
 		}
 
 		if err := set.AddKey(jwkObj); err != nil {
-			logger.Error("add jwk to set failed: kid=%s err=%v", kp.Kid, err)
-			return nil, fmt.Errorf("add jwk to set (kid=%s): %w", kp.Kid, err)
+			logger.Error("add jwk to set failed: kid=%s err=%v", kid, err)
+			return nil, fmt.Errorf("add jwk to set (kid=%s): %w", kid, err)
 		}
 	}
 	return set, nil

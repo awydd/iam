@@ -54,6 +54,11 @@ type HTTP struct {
 	BlockProfileRate     int           `yaml:"block_profile_rate"`
 	MutexProfileFraction int           `yaml:"mutex_profile_fraction"`
 	CORSAllowOrigins     []string      `yaml:"cors_allow_origins"`
+	APIVersion           string        `yaml:"api_version"`
+}
+
+func (h *HTTP) APIBase() string {
+	return "/api/" + h.APIVersion
 }
 
 type Redis struct {
@@ -203,6 +208,7 @@ func defaultConfig() *Config {
 			BlockProfileRate:     0,
 			MutexProfileFraction: 0,
 			CORSAllowOrigins:     nil,
+			APIVersion:           "v1",
 		},
 		Redis: Redis{
 			Addr:            "127.0.0.1:6379",
@@ -388,6 +394,9 @@ func validate(cfg *Config) error {
 				}
 			}
 		}
+	}
+	if cfg.HTTP.APIVersion == "" {
+		errs = append(errs, errors.New("http.api_version must not be empty"))
 	}
 
 	// Redis
