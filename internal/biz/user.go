@@ -37,6 +37,7 @@ type UserBiz struct {
 	signer       TokenSigner
 	sessionCache SessionCache
 	tokenCache   TokenCache
+	loginAttempt LoginAttemptCache
 }
 
 func NewUserBiz(
@@ -46,6 +47,7 @@ func NewUserBiz(
 	signer TokenSigner,
 	sessionCache SessionCache,
 	tokenCache TokenCache,
+	loginAttempt LoginAttemptCache,
 ) *UserBiz {
 	return &UserBiz{
 		store:        store,
@@ -54,6 +56,7 @@ func NewUserBiz(
 		signer:       signer,
 		sessionCache: sessionCache,
 		tokenCache:   tokenCache,
+		loginAttempt: loginAttempt,
 	}
 }
 
@@ -64,9 +67,18 @@ type LoginResp struct {
 }
 
 func (b *UserBiz) Login(ctx context.Context, username, passwordStr, ip, userAgent string) (*LoginResp, error) {
+	locked, ttl, err := b.loginAttempt.IsLocked(ctx, username)
+	if err != nil {
+		return nil, fmt.Errorf("check login lock: %w", err)
+	}
+	if locked {
+		return nil, fmt.Errorf("%w: try again in %d seconds", ErrAccountLocked, int(ttl.Seconds()))
+	}
+
 	u, err := b.store.GetByUsername(ctx, username)
 	if err != nil {
 		if db.IsNotFound(err) {
+			b.recordFailure(ctx, username, ip)
 			return nil, ErrInvalidCredentials
 		}
 		return nil, fmt.Errorf("get user by username: %w", err)
@@ -81,7 +93,13 @@ func (b *UserBiz) Login(ctx context.Context, username, passwordStr, ip, userAgen
 		return nil, fmt.Errorf("validate password: %w", err)
 	}
 	if !ok {
+		b.recordFailure(ctx, username, ip)
 		return nil, ErrInvalidCredentials
+	}
+
+	_ = b.loginAttempt.ResetFailure(ctx, username)
+	if ip != "" {
+		_ = b.loginAttempt.ResetFailureByIP(ctx, ip)
 	}
 
 	if err := b.store.UpdateLastLogin(ctx, u.ID, time.Now()); err != nil {
@@ -118,6 +136,26 @@ func (b *UserBiz) Login(ctx context.Context, username, passwordStr, ip, userAgen
 		RefreshToken: refreshToken,
 		SessionID:    sessionID,
 	}, nil
+}
+
+func (b *UserBiz) recordFailure(ctx context.Context, username, ip string) {
+	loginSecurityCfg := conf.Get().LoginSecurity
+	count, err := b.loginAttempt.IncrFailure(ctx, username, loginSecurityCfg.AttemptWindow)
+	if err != nil {
+		logger.Error("incr login failure failed: %s", err)
+		return
+	}
+	if count >= int64(loginSecurityCfg.MaxAttempts) {
+		if err := b.loginAttempt.Lock(ctx, username, loginSecurityCfg.LockoutDuration); err != nil {
+			logger.Error("lock account failed: %s", err)
+		}
+		_ = b.loginAttempt.ResetFailure(ctx, username)
+	}
+	if ip != "" {
+		if _, err := b.loginAttempt.IncrFailureByIP(ctx, ip, loginSecurityCfg.AttemptWindow); err != nil {
+			logger.Error("incr login failure by ip failed: %s", err)
+		}
+	}
 }
 
 func (b *UserBiz) startSession(ctx context.Context, userID int, userUUID uuid.UUID) (string, error) {

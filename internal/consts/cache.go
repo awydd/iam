@@ -8,3 +8,9 @@ const (
 const (
 	RedisSession = "rs"
 )
+
+const (
+	RedisLoginAttemptFail   = "login:fail:user:"
+	RedisLoginAttemptLock   = "login:lock:user:"
+	RedisLoginAttemptFailIP = "login:fail:ip:"
+)

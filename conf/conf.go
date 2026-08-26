@@ -149,16 +149,24 @@ type Keypair struct {
 	SigningCacheTTL time.Duration `yaml:"signing_cache_ttl"`
 }
 
+type LoginSecurity struct {
+	MaxAttempts     int           `yaml:"max_attempts"`
+	AttemptWindow   time.Duration `yaml:"attempt_window"`
+	LockoutDuration time.Duration `yaml:"lockout_duration"`
+	MaxAttemptsByIP int           `yaml:"max_attempts_by_ip"`
+}
+
 type Config struct {
-	Env      iamEnv   `yaml:"env"`
-	Logger   Logger   `yaml:"logger"`
-	HTTP     HTTP     `yaml:"http"`
-	Redis    Redis    `yaml:"redis"`
-	Database Database `yaml:"database"`
-	Password Password `yaml:"password"`
-	JWT      JWT      `yaml:"jwt"`
-	Cookie   Cookie   `yaml:"cookie"`
-	Keypair  Keypair  `yaml:"keypair"`
+	Env           iamEnv        `yaml:"env"`
+	Logger        Logger        `yaml:"logger"`
+	HTTP          HTTP          `yaml:"http"`
+	Redis         Redis         `yaml:"redis"`
+	Database      Database      `yaml:"database"`
+	Password      Password      `yaml:"password"`
+	JWT           JWT           `yaml:"jwt"`
+	Cookie        Cookie        `yaml:"cookie"`
+	Keypair       Keypair       `yaml:"keypair"`
+	LoginSecurity LoginSecurity `yaml:"login_security"`
 }
 
 func (c *Config) IsDev() bool {
@@ -264,6 +272,12 @@ func defaultConfig() *Config {
 		Keypair: Keypair{
 			VerifyCacheTTL:  DefaultKeypairVerifyCacheTTL,
 			SigningCacheTTL: DefaultKeypairSigningCacheTTL,
+		},
+		LoginSecurity: LoginSecurity{
+			MaxAttempts:     5,
+			AttemptWindow:   10 * time.Minute,
+			LockoutDuration: 15 * time.Minute,
+			MaxAttemptsByIP: 20,
 		},
 	}
 }
@@ -507,6 +521,22 @@ func validate(cfg *Config) error {
 	}
 	if cfg.Keypair.SigningCacheTTL < 0 {
 		errs = append(errs, errors.New("keypair.signing_cache_ttl must not be negative"))
+	}
+
+	if cfg.LoginSecurity.MaxAttempts <= 0 {
+		errs = append(errs, errors.New("login_security.max_attempts must be greater than 0"))
+	}
+	if cfg.LoginSecurity.AttemptWindow <= 0 {
+		errs = append(errs, errors.New("login_security.attempt_window must be positive"))
+	}
+	if cfg.LoginSecurity.LockoutDuration <= 0 {
+		errs = append(errs, errors.New("login_security.lockout_duration must be positive"))
+	}
+	if cfg.LoginSecurity.MaxAttemptsByIP <= 0 {
+		errs = append(errs, errors.New("login_security.max_attempts_by_ip must be greater than 0"))
+	}
+	if cfg.LoginSecurity.MaxAttemptsByIP < cfg.LoginSecurity.MaxAttempts {
+		errs = append(errs, errors.New("login_security.max_attempts_by_ip should not be less than max_attempts"))
 	}
 
 	return errors.Join(errs...)

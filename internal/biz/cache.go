@@ -29,3 +29,12 @@ type TokenCache interface {
 	ExistsRefresh(ctx context.Context, sessionID uuid.UUID) (bool, error)
 	DelRefresh(ctx context.Context, sessionID uuid.UUID) error
 }
+
+type LoginAttemptCache interface {
+	IncrFailure(ctx context.Context, username string, window time.Duration) (int64, error)
+	ResetFailure(ctx context.Context, username string) error
+	Lock(ctx context.Context, username string, duration time.Duration) error
+	IsLocked(ctx context.Context, username string) (bool, time.Duration, error)
+	IncrFailureByIP(ctx context.Context, ip string, window time.Duration) (int64, error)
+	ResetFailureByIP(ctx context.Context, ip string) error
+}

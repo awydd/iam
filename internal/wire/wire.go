@@ -49,6 +49,9 @@ var cacheSet = wire.NewSet(
 
 	redis.NewSessionCache,
 	wire.Bind(new(biz.SessionCache), new(*redis.SessionCache)),
+
+	redis.NewLoginAttemptCache,
+	wire.Bind(new(biz.LoginAttemptCache), new(*redis.LoginAttemptCache)),
 )
 
 func provideJWTManager(keypairBiz *biz.KeypairBiz) *jwt.Manager {

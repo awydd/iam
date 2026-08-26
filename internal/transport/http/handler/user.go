@@ -37,7 +37,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 
 	result, err := h.userBiz.Login(ctx, body.Username, body.Password, body.RequestMeta.IP, body.RequestMeta.UserAgent)
 	if err != nil {
-		response.BadRequest(c)
+		response.ErrMessage(c, code.BadRequest, err.Error())
 		return
 	}
 
