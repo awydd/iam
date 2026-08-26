@@ -53,6 +53,7 @@ func registerRoutes(r *gin.Engine, app *wire.App) {
 	auth := api.Group("/auth")
 	{
 		auth.POST("/login", app.User.Login)
+		auth.POST("/refresh", app.User.Refresh)
 	}
 
 	protected := api.Group("")

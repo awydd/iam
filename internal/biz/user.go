@@ -252,3 +252,68 @@ func (b *UserBiz) Me(ctx context.Context, userUUID uuid.UUID) (*UserMeResp, erro
 		IsSystem: u.IsSystem,
 	}, nil
 }
+
+func (b *UserBiz) Refresh(ctx context.Context, refreshToken, ip, userAgent string) (*LoginResp, error) {
+	identity := hashutil.Sum256([]byte(refreshToken))
+
+	tok, err := b.tokenStore.GetIfValid(ctx, identity, enum.TokenTypeRefresh)
+	if err != nil {
+		if db.IsNotFound(err) {
+			return nil, ErrRefreshTokenInvalid
+		}
+		return nil, fmt.Errorf("get refresh token: %w", err)
+	}
+
+	online, err := b.tokenCache.ExistsRefresh(ctx, tok.SessionID)
+	if err != nil {
+		return nil, fmt.Errorf("check refresh token online: %w", err)
+	}
+	if !online {
+		_ = b.tokenStore.RevokeBySessionID(ctx, tok.SessionID)
+		return nil, ErrRefreshTokenExpired
+	}
+
+	u, err := b.store.Get(ctx, tok.UserID)
+	if err != nil {
+		if db.IsNotFound(err) {
+			_ = b.invalidateSession(ctx, tok.SessionID)
+			return nil, errors.New("user not found")
+		}
+		return nil, fmt.Errorf("get user: %w", err)
+	}
+	if u.Status != enum.UserStatusActive {
+		_ = b.invalidateSession(ctx, tok.SessionID)
+		return nil, ErrAccountNotActive
+	}
+
+	if err := b.tokenStore.RevokeBySessionID(ctx, tok.SessionID); err != nil {
+		return nil, fmt.Errorf("revoke old refresh token: %w", err)
+	}
+	_ = b.invalidateSession(ctx, tok.SessionID)
+
+	newJwtSessionID := uuid.New()
+	jwtCfg := conf.Get().JWT
+
+	accessToken, err := b.signer.SignAccessToken(ctx, u.UUID, newJwtSessionID, u.Username, jwtCfg.AccessTokenTTL)
+	if err != nil {
+		return nil, fmt.Errorf("sign access token: %w", err)
+	}
+
+	var newRefreshToken string
+	if tok.ApplicationID == 0 {
+		newRefreshToken, err = b.issueRefreshToken(ctx, u.ID, newJwtSessionID, ip, userAgent)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("issue refresh token: %w", err)
+	}
+
+	if err := b.tokenCache.SetAccess(ctx, newJwtSessionID, jwtCfg.AccessTokenTTL); err != nil {
+		return nil, fmt.Errorf("cache access token: %w", err)
+	}
+	if err := b.tokenCache.SetRefresh(ctx, newJwtSessionID, jwtCfg.RefreshTokenTTL); err != nil {
+		return nil, fmt.Errorf("cache refresh token: %w", err)
+	}
+
+	return &LoginResp{AccessToken: accessToken, RefreshToken: newRefreshToken}, nil
+}

@@ -85,3 +85,31 @@ func (h *UserHandler) Me(c *gin.Context) {
 
 	response.Success(c, res)
 }
+
+func (h *UserHandler) Refresh(c *gin.Context) {
+	refreshToken, err := utils.Cookie().Get(c.Request, consts.CookieRefreshToken)
+	if err != nil || refreshToken == "" {
+		response.Err(c, code.RefreshTokenInvalid)
+		return
+	}
+
+	meta := GetRequestMeta(c.Request)
+	ctx := c.Request.Context()
+
+	result, err := h.userBiz.Refresh(ctx, refreshToken, meta.IP, meta.UserAgent)
+	if err != nil {
+		cookie := utils.Cookie()
+		cookie.Delete(c.Writer, consts.CookieAccessToken)
+		cookie.Delete(c.Writer, consts.CookieRefreshToken)
+
+		response.ErrMessage(c, code.BadRequest, err.Error())
+		return
+	}
+
+	jwtCfg := conf.Get().JWT
+	cookie := utils.Cookie()
+	cookie.Set(c.Writer, consts.CookieAccessToken, result.AccessToken, int(jwtCfg.AccessTokenTTL.Seconds()))
+	cookie.Set(c.Writer, consts.CookieRefreshToken, result.RefreshToken, int(jwtCfg.RefreshTokenTTL.Seconds()))
+
+	response.OK(c)
+}

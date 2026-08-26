@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/awydd/iam/internal/enum"
+	"github.com/awydd/iam/internal/infra/ent/db"
 	"github.com/awydd/iam/internal/logger"
 	"github.com/google/uuid"
 )
@@ -22,6 +23,10 @@ type TokenCreateCommand struct {
 }
 
 type TokenStore interface {
+	Get(ctx context.Context, id int) (*db.Token, error)
+	GetIfValid(ctx context.Context, identity []byte, tokenType enum.TokenType) (*db.Token, error)
+	GetBySessionID(ctx context.Context, sessionID uuid.UUID) (*db.Token, error)
+
 	Create(ctx context.Context, body TokenCreateCommand) error
 	RevokeBySessionID(ctx context.Context, sessionID uuid.UUID) error
 	UpdateLastActiveBySessionID(ctx context.Context, sessionID uuid.UUID, t time.Time) error
