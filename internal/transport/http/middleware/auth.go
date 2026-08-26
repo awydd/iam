@@ -3,6 +3,7 @@ package middleware
 import (
 	"github.com/awydd/iam/internal/biz"
 	"github.com/awydd/iam/internal/consts"
+	"github.com/awydd/iam/internal/infra/ent/db"
 	"github.com/awydd/iam/internal/jwt"
 	"github.com/awydd/iam/pkg/response"
 	"github.com/awydd/iam/pkg/response/code"
@@ -39,6 +40,38 @@ func Auth(jwtManager *jwt.Manager, tokenCache biz.TokenCache, tokenBiz *biz.Toke
 		c.Set(consts.CtxUsername, claims.Name)
 
 		tokenBiz.Touch(c.Request.Context(), claims.SessionID)
+
+		c.Next()
+	}
+}
+
+func RequireSystem(userBiz *biz.UserBiz) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userUUID, ok := UserUUIDFromContext(c)
+		if !ok {
+			response.Err(c, code.Unauthorized)
+			c.Abort()
+			return
+		}
+
+		ctx := c.Request.Context()
+
+		u, err := userBiz.GetByUUID(ctx, userUUID)
+		if err != nil {
+			if db.IsNotFound(err) {
+				response.Err(c, code.Unauthorized)
+			} else {
+				response.Err(c, code.InternalError)
+			}
+			c.Abort()
+			return
+		}
+
+		if !u.IsSystem {
+			response.Err(c, code.Forbidden)
+			c.Abort()
+			return
+		}
 
 		c.Next()
 	}

@@ -317,3 +317,15 @@ func (b *UserBiz) Refresh(ctx context.Context, refreshToken, ip, userAgent strin
 
 	return &LoginResp{AccessToken: accessToken, RefreshToken: newRefreshToken}, nil
 }
+
+func (b *UserBiz) GetByUUID(ctx context.Context, userUUID uuid.UUID) (*db.User, error) {
+	u, err := b.store.GetByUUID(ctx, userUUID)
+	if err != nil {
+		if db.IsNotFound(err) {
+			return nil, ErrUserNotFound
+		}
+		logger.Error("get user by uuid failed: uuid=%s err=%v", userUUID, err)
+		return nil, fmt.Errorf("get user by uuid: %w", err)
+	}
+	return u, nil
+}

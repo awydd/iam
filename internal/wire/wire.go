@@ -19,6 +19,7 @@ type App struct {
 	User    *handler.UserHandler
 
 	TokenBiz *biz.TokenBiz
+	UserBiz  *biz.UserBiz
 
 	JWTManager *jwt.Manager
 	TokenCache biz.TokenCache

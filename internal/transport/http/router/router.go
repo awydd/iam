@@ -61,4 +61,9 @@ func registerRoutes(r *gin.Engine, app *wire.App) {
 
 	protected.POST("/auth/logout", app.User.Logout)
 	protected.GET("/auth/me", app.User.Me)
+
+	admin := protected.Group("")
+	admin.Use(middleware.RequireSystem(app.UserBiz))
+	{
+	}
 }
