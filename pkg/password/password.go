@@ -96,21 +96,22 @@ func newHasher(cfg *Config) *hasher {
 var (
 	defaultHasher *hasher
 	once          sync.Once
-	customConfig  *Config
 )
 
+var globalConfig *Config
+
 func Init(cfg *Config) {
-	once.Do(func() {
-		customConfig = cfg
-	})
+	globalConfig = cfg
 }
 
 func getHasher() *hasher {
 	once.Do(func() {
-		if defaultHasher == nil {
-			defaultHasher = newHasher(customConfig)
-		}
+		defaultHasher = newHasher(globalConfig)
 	})
+
+	if defaultHasher == nil {
+		defaultHasher = newHasher(nil)
+	}
 	return defaultHasher
 }
 
