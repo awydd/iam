@@ -68,5 +68,9 @@ func registerRoutes(r *gin.Engine, app *wire.App) {
 	admin := protected.Group("")
 	admin.Use(middleware.RequireSystem(app.UserBiz))
 	{
+		admin.GET("/keypairs", app.Keypair.List)
+		admin.POST("/keypairs/rotate", app.Keypair.Rotate)
+		admin.PUT("/keypairs/:kid/downgrade", app.Keypair.Downgrade)
+		admin.PUT("/keypairs/:kid/retire", app.Keypair.Retire)
 	}
 }
