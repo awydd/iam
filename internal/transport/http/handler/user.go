@@ -1,6 +1,12 @@
 package handler
 
 import (
+	"errors"
+	"net/http"
+	"net/url"
+	"strings"
+	"text/template"
+
 	"github.com/awydd/iam/conf"
 	"github.com/awydd/iam/internal/biz"
 	"github.com/awydd/iam/internal/consts"
@@ -9,6 +15,7 @@ import (
 	"github.com/awydd/iam/pkg/response"
 	"github.com/awydd/iam/pkg/response/code"
 	"github.com/awydd/iam/pkg/utils"
+	"github.com/awydd/iam/templates"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -19,6 +26,61 @@ type UserHandler struct {
 
 func NewUserHandler(userBiz *biz.UserBiz) *UserHandler {
 	return &UserHandler{userBiz: userBiz}
+}
+
+var loginTpl = template.Must(template.ParseFS(templates.FS, "login.html"))
+
+type ShowLoginReq struct {
+	Redirect string `form:"redirect"`
+}
+
+func (h *UserHandler) validateRedirect(redirect string) (string, error) {
+	if redirect == "" {
+		return "/", nil
+	}
+
+	inputURL, err := url.Parse(redirect)
+	if err != nil {
+		return "/", nil
+	}
+
+	if inputURL.IsAbs() || inputURL.Host != "" {
+		return "", errors.New("prohibited external redirect")
+	}
+
+	if !strings.HasPrefix(redirect, "/") {
+		return "/", nil
+	}
+
+	return redirect, nil
+}
+
+func (h *UserHandler) ShowLogin(c *gin.Context) {
+	var params ShowLoginReq
+	if err := c.ShouldBindQuery(&params); err != nil {
+		response.Err(c, code.InvalidParams)
+		return
+	}
+
+	finalRedirect, err := h.validateRedirect(params.Redirect)
+	if err != nil {
+		logger.Error("validate redirect failed: %s", err)
+		finalRedirect = ""
+	}
+
+	if params.Redirect != "" && finalRedirect == "" {
+		logger.Warn("redirect url was blocked or invalid, input=%s", params.Redirect)
+	}
+
+	c.Header("Content-Type", "text/html; charset=utf-8")
+	c.Writer.WriteHeader(http.StatusOK)
+
+	if err := loginTpl.Execute(c.Writer, gin.H{
+		"Redirect":    finalRedirect,
+		"LoginApiUrl": conf.Get().HTTP.AuthLoginPath(),
+	}); err != nil {
+		logger.Error("render login template failed: %s", err)
+	}
 }
 
 type LoginReq struct {

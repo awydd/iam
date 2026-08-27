@@ -61,6 +61,10 @@ func (h *HTTP) APIBase() string {
 	return "/api/" + h.APIVersion
 }
 
+func (h *HTTP) AuthLoginPath() string {
+	return h.APIBase() + "/auth/login"
+}
+
 type Redis struct {
 	Addr            string        `yaml:"addr"`
 	Password        string        `yaml:"password"`

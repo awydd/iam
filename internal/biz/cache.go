@@ -44,3 +44,19 @@ const lastActiveThrottleWindow = 5 * time.Minute
 type LastActiveCache interface {
 	ShouldUpdate(ctx context.Context, sessionID uuid.UUID, window time.Duration) (bool, error)
 }
+
+type OAuthCodePayload struct {
+	UserID              int
+	UserUUID            uuid.UUID
+	SessionID           uuid.UUID
+	ClientID            string
+	RedirectURI         string
+	State               string
+	CodeChallenge       string
+	CodeChallengeMethod string
+}
+
+type OAuthCodeCache interface {
+	SetCode(ctx context.Context, code string, payload OAuthCodePayload) error
+	GetAndDelCode(ctx context.Context, code string) (*OAuthCodePayload, error)
+}

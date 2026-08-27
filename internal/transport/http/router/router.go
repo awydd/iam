@@ -52,8 +52,15 @@ func registerRoutes(r *gin.Engine, app *wire.App) {
 	api := r.Group(conf.Get().HTTP.APIBase())
 	auth := api.Group("/auth")
 	{
+		auth.GET("/login", app.User.ShowLogin)
 		auth.POST("/login", app.User.Login)
 		auth.POST("/refresh", app.User.Refresh)
+	}
+
+	oauth := api.Group("/oauth")
+	{
+		oauth.GET("/authorize", app.OAuth.Authorize)
+		oauth.POST("/token", app.OAuth.ExchangeToken)
 	}
 
 	protected := api.Group("")

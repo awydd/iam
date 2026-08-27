@@ -2,8 +2,10 @@ package biz
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/awydd/iam/internal/enum"
 	"github.com/awydd/iam/internal/infra/ent/db"
@@ -314,4 +316,62 @@ func (b *ApplicationBiz) Delete(ctx context.Context, id int) error {
 	}
 
 	return nil
+}
+
+func (b *ApplicationBiz) ValidateAuthorize(ctx context.Context, clientID, redirectURI string) (*db.Application, error) {
+	if clientID == "" {
+		return nil, ErrClientIDRequired
+	}
+	if redirectURI == "" {
+		return nil, ErrRedirectURIInvalid
+	}
+
+	app, err := b.store.GetByClientID(ctx, clientID)
+	if err != nil {
+		if db.IsNotFound(err) {
+			return nil, ErrClientNotFound
+		}
+		return nil, fmt.Errorf("get application by client_id: %w", err)
+	}
+
+	if app.Status != enum.ApplicationStatusActive {
+		return nil, ErrClientDisabled
+	}
+
+	if len(app.RedirectUris) == 0 || !slices.Contains(app.RedirectUris, redirectURI) {
+		return nil, ErrRedirectURIInvalid
+	}
+	return app, nil
+}
+
+func (b *ApplicationBiz) ValidateClient(ctx context.Context, clientID, clientSecret string) (*db.Application, error) {
+	if clientID == "" {
+		return nil, ErrClientSecretWrong
+	}
+
+	app, err := b.store.GetByClientID(ctx, clientID)
+	if err != nil {
+		if db.IsNotFound(err) {
+			return nil, ErrClientNotFound
+		}
+		return nil, fmt.Errorf("get application by client_id: %w", err)
+	}
+
+	if app.Status != enum.ApplicationStatusActive {
+		return nil, ErrClientDisabled
+	}
+
+	if app.Type == enum.ApplicationClientTypePublic {
+		return app, nil
+	}
+
+	if clientSecret == "" || len(app.ClientSecret) == 0 {
+		return nil, ErrClientSecretWrong
+	}
+
+	secretHash := hashutil.Sum256([]byte(clientSecret))
+	if subtle.ConstantTimeCompare(app.ClientSecret, secretHash) != 1 {
+		return nil, ErrClientSecretWrong
+	}
+	return app, nil
 }
