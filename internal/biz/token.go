@@ -23,12 +23,22 @@ type TokenCreateCommand struct {
 }
 
 type TokenStore interface {
+	List(ctx context.Context, userID, applicationID int, page, perPage int) ([]*db.Token, int, error)
+	ListActiveSessionsByUserID(ctx context.Context, userID int) ([]uuid.UUID, error)
+	ListActiveSessionsByApplicationID(ctx context.Context, applicationID int) ([]uuid.UUID, error)
+
 	Get(ctx context.Context, id int) (*db.Token, error)
 	GetIfValid(ctx context.Context, identity []byte, tokenType enum.TokenType) (*db.Token, error)
 	GetBySessionID(ctx context.Context, sessionID uuid.UUID) (*db.Token, error)
 
 	Create(ctx context.Context, body TokenCreateCommand) error
+
+	Revoke(ctx context.Context, id int) error
 	RevokeBySessionID(ctx context.Context, sessionID uuid.UUID) error
+	RevokeByJti(ctx context.Context, jti uuid.UUID) error
+	RevokeByUserID(ctx context.Context, userID int) error
+	RevokeByApplicationID(ctx context.Context, applicationID int) error
+
 	UpdateLastActiveBySessionID(ctx context.Context, sessionID uuid.UUID, t time.Time) error
 }
 

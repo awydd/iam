@@ -124,3 +124,12 @@ func (s *UserStore) UpdateLastLogin(ctx context.Context, id int, at time.Time) e
 	}
 	return nil
 }
+
+func (s *UserStore) UpdatePassword(ctx context.Context, id int, hashed string) error {
+	if err := s.Client(ctx).User.UpdateOneID(id).
+		SetPassword([]byte(hashed)).
+		Exec(ctx); err != nil {
+		return fmt.Errorf("update password for user %d: %w", id, err)
+	}
+	return nil
+}

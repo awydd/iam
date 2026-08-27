@@ -25,6 +25,7 @@ type UserStore interface {
 	GetSystem(ctx context.Context) (*db.User, error)
 
 	UpdateLastLogin(ctx context.Context, id int, at time.Time) error
+	UpdatePassword(ctx context.Context, id int, hashed string) error
 }
 
 type TokenSigner interface {
@@ -328,4 +329,122 @@ func (b *UserBiz) GetByUUID(ctx context.Context, userUUID uuid.UUID) (*db.User, 
 		return nil, fmt.Errorf("get user by uuid: %w", err)
 	}
 	return u, nil
+}
+
+func (b *UserBiz) Password(ctx context.Context, id int, oldPassword, newPassword string) error {
+	info, err := b.store.Get(ctx, id)
+	if err != nil {
+		if db.IsNotFound(err) {
+			return errors.New("user not found")
+		}
+		return fmt.Errorf("get user: %w", err)
+	}
+
+	if info.IsSystem {
+		return errors.New("system user password cannot be changed via this endpoint; use the CLI tool")
+	}
+
+	ok, err := password.Validate(oldPassword, string(info.Password))
+	if err != nil {
+		return fmt.Errorf("validate password: %w", err)
+	}
+	if !ok {
+		return ErrInvalidCredentials
+	}
+
+	hashed, err := password.Hash(newPassword)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+
+	if err := b.store.UpdatePassword(ctx, id, hashed); err != nil {
+		return fmt.Errorf("update password: %w", err)
+	}
+
+	_ = b.InvalidateAllSessions(ctx, id)
+	return nil
+}
+
+func (b *UserBiz) InvalidateAllSessions(ctx context.Context, userID int) error {
+	sys, err := b.store.GetSystem(ctx)
+	if err == nil && sys != nil && sys.ID == userID {
+		return errors.New("cannot revoke sessions for system user")
+	}
+
+	var errs []error
+
+	sessionIDs, err := b.tokenStore.ListActiveSessionsByUserID(ctx, userID)
+	if err != nil {
+		errs = append(errs, fmt.Errorf("list active sessions: %w", err))
+	}
+
+	if err := b.tokenStore.RevokeByUserID(ctx, userID); err != nil {
+		errs = append(errs, fmt.Errorf("revoke tokens: %w", err))
+	}
+
+	for _, sid := range sessionIDs {
+		if err := b.invalidateSession(ctx, sid); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	if err := b.sessionCache.DelAllByUser(ctx, userID); err != nil {
+		errs = append(errs, fmt.Errorf("clear sessions: %w", err))
+	}
+
+	if len(errs) > 0 {
+		return errors.Join(errs...)
+	}
+	return nil
+}
+
+type UserListSessionsItemResp struct {
+	SessionID     uuid.UUID  `json:"session_id"`
+	ApplicationID int        `json:"application_id"`
+	IP            string     `json:"ip"`
+	UserAgent     string     `json:"user_agent"`
+	CreatedAt     time.Time  `json:"created_at"`
+	ExpiresAt     time.Time  `json:"expires_at"`
+	LastActiveAt  *time.Time `json:"last_active_at"`
+	IsCurrent     bool       `json:"is_current"`
+}
+
+func (b *UserBiz) ListSessions(ctx context.Context, currentSessionID uuid.UUID, userID, page, perPage int) ([]UserListSessionsItemResp, int, error) {
+	list, total, err := b.tokenStore.List(ctx, userID, 0, page, perPage)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list sessions: %w", err)
+	}
+
+	views := make([]UserListSessionsItemResp, 0, len(list))
+	for _, t := range list {
+		views = append(views, UserListSessionsItemResp{
+			SessionID:     t.SessionID,
+			ApplicationID: t.ApplicationID,
+			IP:            t.IP,
+			UserAgent:     t.UserAgent,
+			CreatedAt:     t.CreatedAt,
+			ExpiresAt:     t.ExpiresAt,
+			LastActiveAt:  t.LastActiveAt,
+			IsCurrent:     t.SessionID == currentSessionID,
+		})
+	}
+	return views, total, nil
+}
+
+func (b *UserBiz) RevokeSession(ctx context.Context, userID int, sessionID uuid.UUID) error {
+	tok, err := b.tokenStore.GetBySessionID(ctx, sessionID)
+	if err != nil {
+		if db.IsNotFound(err) {
+			return errors.New("session not found")
+		}
+		return fmt.Errorf("get session: %w", err)
+	}
+	if tok.UserID != userID {
+		return errors.New("session not found")
+	}
+
+	if err := b.tokenStore.RevokeBySessionID(ctx, sessionID); err != nil {
+		return fmt.Errorf("revoke session: %w", err)
+	}
+	return b.invalidateSession(ctx, sessionID)
 }
