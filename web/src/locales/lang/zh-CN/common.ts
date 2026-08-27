@@ -1,1 +1,21 @@
-export default {}
+export default {
+  recordNumber: '序号',
+  confirm: '确定',
+  cancel: '取消',
+  save: '保存',
+  delete: '删除',
+  edit: '编辑',
+  search: '搜索',
+  reset: '重置',
+  create: '新增',
+  add: '添加',
+  action: '操作',
+  tip: '提示',
+  success: '操作成功',
+  operationSuccess: '操作成功',
+  operationFailed: '操作失败',
+  fail: '失败',
+  warning: '提示',
+  select: '请选择',
+  searchPlaceholder: '请输入搜索内容',
+}
