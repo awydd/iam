@@ -15,9 +15,10 @@ import (
 )
 
 type App struct {
-	Keypair *handler.KeypairHandler
-	User    *handler.UserHandler
-	Token   *handler.TokenHandler
+	Keypair     *handler.KeypairHandler
+	User        *handler.UserHandler
+	Token       *handler.TokenHandler
+	Application *handler.ApplicationHandler
 
 	TokenBiz *biz.TokenBiz
 	UserBiz  *biz.UserBiz
@@ -30,12 +31,14 @@ var handlerSet = wire.NewSet(
 	handler.NewKeypairHandler,
 	handler.NewUserHandler,
 	handler.NewTokenHandler,
+	handler.NewApplicationHandler,
 )
 
 var bizSet = wire.NewSet(
 	biz.NewKeypairBiz,
 	biz.NewUserBiz,
 	biz.NewTokenBiz,
+	biz.NewApplicationBiz,
 )
 
 var storeSet = wire.NewSet(
@@ -53,6 +56,9 @@ var storeSet = wire.NewSet(
 
 	redis.NewLastActiveCache,
 	wire.Bind(new(biz.LastActiveCache), new(*redis.LastActiveCache)),
+
+	store.NewApplicationStore,
+	wire.Bind(new(biz.ApplicationStore), new(*store.ApplicationStore)),
 )
 
 var cacheSet = wire.NewSet(

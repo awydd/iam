@@ -76,5 +76,14 @@ func registerRoutes(r *gin.Engine, app *wire.App) {
 		admin.GET("/tokens", app.Token.List)
 		admin.GET("/tokens/:id", app.Token.Info)
 		admin.DELETE("/tokens/:id", app.Token.Revoke)
+
+		admin.GET("/applications", app.Application.List)
+		admin.GET("/applications/:id", app.Application.Info)
+		admin.POST("/applications", app.Application.Create)
+		admin.PUT("/applications/:id", app.Application.Update)
+		admin.PUT("/applications/:id/status", app.Application.UpdateStatus)
+		admin.PUT("/applications/:id/ttl", app.Application.UpdateTTL)
+		admin.PUT("/applications/:id/secret", app.Application.UpdateSecret)
+		admin.DELETE("/applications/:id", app.Application.Delete)
 	}
 }

@@ -68,6 +68,10 @@ func (Application) Fields() []ent.Field {
 			Min(3600).
 			Max(int(enum.ApplicationMaxRefreshTokenTTL.Seconds())).
 			Default(int(enum.ApplicationDefaultRefreshTokenTTL.Seconds())),
+
+		field.Bool("is_system").
+			Immutable().
+			Default(false),
 	}
 }
 
