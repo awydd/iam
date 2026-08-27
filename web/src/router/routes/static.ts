@@ -24,6 +24,12 @@ export const staticRoutes: RouteRecordRaw[] = [
         component: () => import('@/views/user/ProfileView.vue'),
         meta: { icon: 'user', name: 'profile', hidden: true },
       },
+      {
+        path: 'keypairs',
+        name: 'keypairs',
+        component: () => import('@/views/keypair/ListView.vue'),
+        meta: { icon: 'key', name: 'keypair' },
+      },
     ],
   },
   {
