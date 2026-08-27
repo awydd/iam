@@ -2,6 +2,7 @@ package biz
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/awydd/iam/internal/enum"
@@ -40,6 +41,8 @@ type TokenStore interface {
 	RevokeByApplicationID(ctx context.Context, applicationID int) error
 
 	UpdateLastActiveBySessionID(ctx context.Context, sessionID uuid.UUID, t time.Time) error
+
+	ClearExpireOrRevoked(ctx context.Context) (int, error)
 }
 
 type TokenBiz struct {
@@ -74,4 +77,28 @@ func (b *TokenBiz) Touch(ctx context.Context, sessionID uuid.UUID) {
 			logger.Error("update last active failed, session=%s err=%v", sessionID, err)
 		}
 	}()
+}
+
+func (b *TokenBiz) CleanExpiredOrRevoked(ctx context.Context) (int, error) {
+	const maxBatches = 1000
+	total := 0
+	for range maxBatches {
+		select {
+		case <-ctx.Done():
+			return total, ctx.Err()
+		default:
+		}
+
+		affected, err := b.store.ClearExpireOrRevoked(ctx)
+		if err != nil {
+			return total, fmt.Errorf("clear batch: %w", err)
+		}
+		total += affected
+
+		if affected == 0 {
+			break
+		}
+		logger.Info("token cleanup: removed %d rows this batch, %d total so far", affected, total)
+	}
+	return total, nil
 }

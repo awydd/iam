@@ -237,3 +237,37 @@ func (s *TokenStore) UpdateLastActiveBySessionID(ctx context.Context, sessionID 
 		Save(ctx)
 	return err
 }
+
+func (s *TokenStore) ClearExpireOrRevoked(ctx context.Context) (int, error) {
+	now := time.Now()
+	batchSize := 1000
+
+	ids, err := s.Client(ctx).Token.Query().
+		Where(
+			token.Or(
+				token.ExpiresAtLTE(now),
+				token.RevokedAtNotNil(),
+			),
+		).
+		Limit(batchSize).
+		Select(token.FieldID).
+		Ints(ctx)
+
+	if err != nil {
+		return 0, err
+	}
+
+	if len(ids) == 0 {
+		return 0, nil
+	}
+
+	affected, err := s.Client(ctx).Token.Delete().
+		Where(token.IDIn(ids...)).
+		Exec(ctx)
+
+	if err != nil {
+		return 0, err
+	}
+
+	return affected, nil
+}

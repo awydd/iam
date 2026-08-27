@@ -24,9 +24,13 @@ var _ jwt.KeyProvider = (*KeypairBiz)(nil)
 
 type KeypairStore interface {
 	ListVerifiable(ctx context.Context) ([]*db.Keypair, error)
+
 	GetActiveSigningKey(ctx context.Context) (*db.Keypair, error)
 	GetByKid(ctx context.Context, kid string) (*db.Keypair, error)
+
 	Create(ctx context.Context, kid string, algorithm enum.KeypairAlgorithm, publicKey, privateKey string) (*db.Keypair, error)
+
+	DeleteRetiredBefore(ctx context.Context, before time.Time) (int, error)
 }
 
 type keypairCache struct {
@@ -237,4 +241,15 @@ func (b *KeypairBiz) JWKS(ctx context.Context) (jwt.JWKSet, error) {
 		}
 	}
 	return set, nil
+}
+
+const keypairRetiredRetention = 30 * 24 * time.Hour
+
+func (b *KeypairBiz) CleanRetired(ctx context.Context) (int, error) {
+	cutoff := time.Now().Add(-keypairRetiredRetention)
+	affected, err := b.store.DeleteRetiredBefore(ctx, cutoff)
+	if err != nil {
+		return 0, fmt.Errorf("clean retired keypairs: %w", err)
+	}
+	return affected, nil
 }

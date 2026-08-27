@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/awydd/iam/internal/biz"
 	"github.com/awydd/iam/internal/enum"
@@ -63,4 +64,17 @@ func (s *KeypairStore) Create(ctx context.Context, kid string, algorithm enum.Ke
 		return nil, fmt.Errorf("create key pair: %w", err)
 	}
 	return kp, nil
+}
+
+func (s *KeypairStore) DeleteRetiredBefore(ctx context.Context, before time.Time) (int, error) {
+	affected, err := s.Client(ctx).Keypair.Delete().
+		Where(
+			keypair.StatusEQ(enum.KeypairStatusRetired),
+			keypair.RetireAtLTE(before),
+		).
+		Exec(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("delete retired keypairs: %w", err)
+	}
+	return affected, nil
 }
