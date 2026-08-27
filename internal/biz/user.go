@@ -24,6 +24,9 @@ type UserStore interface {
 	GetByEmail(ctx context.Context, email string) (*db.User, error)
 	GetSystem(ctx context.Context) (*db.User, error)
 
+	Duplicate(ctx context.Context, username, email string, id ...int) (bool, error)
+
+	Update(ctx context.Context, id int, username, email string, status enum.UserStatus, hashed string) (*db.User, error)
 	UpdateLastLogin(ctx context.Context, id int, at time.Time) error
 	UpdatePassword(ctx context.Context, id int, hashed string) error
 }
