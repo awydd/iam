@@ -15,8 +15,11 @@ import (
 )
 
 type App struct {
-	Keypair *handler.KeypairHandler
-	User    *handler.UserHandler
+	Keypair     *handler.KeypairHandler
+	User        *handler.UserHandler
+	Token       *handler.TokenHandler
+	Application *handler.ApplicationHandler
+	OAuth       *handler.OAuthHandler
 
 	TokenBiz *biz.TokenBiz
 	UserBiz  *biz.UserBiz
@@ -28,12 +31,16 @@ type App struct {
 var handlerSet = wire.NewSet(
 	handler.NewKeypairHandler,
 	handler.NewUserHandler,
+	handler.NewTokenHandler,
+	handler.NewApplicationHandler,
+	handler.NewOAuthHandler,
 )
 
 var bizSet = wire.NewSet(
 	biz.NewKeypairBiz,
 	biz.NewUserBiz,
 	biz.NewTokenBiz,
+	biz.NewApplicationBiz,
 )
 
 var storeSet = wire.NewSet(
@@ -51,6 +58,9 @@ var storeSet = wire.NewSet(
 
 	redis.NewLastActiveCache,
 	wire.Bind(new(biz.LastActiveCache), new(*redis.LastActiveCache)),
+
+	store.NewApplicationStore,
+	wire.Bind(new(biz.ApplicationStore), new(*store.ApplicationStore)),
 )
 
 var cacheSet = wire.NewSet(
@@ -62,6 +72,9 @@ var cacheSet = wire.NewSet(
 
 	redis.NewLoginAttemptCache,
 	wire.Bind(new(biz.LoginAttemptCache), new(*redis.LoginAttemptCache)),
+
+	redis.NewOAuthCodeCache,
+	wire.Bind(new(biz.OAuthCodeCache), new(*redis.OAuthCodeCache)),
 )
 
 func provideJWTManager(keypairBiz *biz.KeypairBiz) *jwt.Manager {
@@ -69,9 +82,15 @@ func provideJWTManager(keypairBiz *biz.KeypairBiz) *jwt.Manager {
 	return jwt.New(keypairBiz, jwt.WithIssuer(cfg.Issuer), jwt.WithAudience(cfg.Audience))
 }
 
+func provideApplicationLookup(store biz.ApplicationStore) biz.ApplicationLookup {
+	return store
+}
+
 var helperSet = wire.NewSet(
 	provideJWTManager,
 	wire.Bind(new(biz.TokenSigner), new(*jwt.Manager)),
+
+	provideApplicationLookup,
 )
 
 var providerSet = wire.NewSet(

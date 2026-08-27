@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/awydd/iam/conf"
 	"github.com/awydd/iam/internal/infra/database"
@@ -43,6 +44,8 @@ func server() error {
 		syscall.SIGTERM,
 	)
 	defer stop()
+
+	startTokenCleanupScheduler(ctx, time.Hour)
 
 	app := wire.InitApp(database.DB())
 	srv, err := httpserver.New(&conf.Get().HTTP, app)

@@ -24,11 +24,19 @@ type UserStore interface {
 	GetByEmail(ctx context.Context, email string) (*db.User, error)
 	GetSystem(ctx context.Context) (*db.User, error)
 
+	Duplicate(ctx context.Context, username, email string, id ...int) (bool, error)
+
+	Update(ctx context.Context, id int, username, email string, status enum.UserStatus, hashed string) (*db.User, error)
 	UpdateLastLogin(ctx context.Context, id int, at time.Time) error
+	UpdatePassword(ctx context.Context, id int, hashed string) error
 }
 
 type TokenSigner interface {
 	SignAccessToken(ctx context.Context, userID, sessionID uuid.UUID, name string, ttl time.Duration) (string, error)
+}
+
+type ApplicationLookup interface {
+	Get(ctx context.Context, id int) (*db.Application, error)
 }
 
 type UserBiz struct {
@@ -36,6 +44,7 @@ type UserBiz struct {
 	tokenStore   TokenStore
 	tx           Transactor
 	signer       TokenSigner
+	appLookup    ApplicationLookup
 	sessionCache SessionCache
 	tokenCache   TokenCache
 	loginAttempt LoginAttemptCache
@@ -46,6 +55,7 @@ func NewUserBiz(
 	tokenStore TokenStore,
 	tx Transactor,
 	signer TokenSigner,
+	appLookup ApplicationLookup,
 	sessionCache SessionCache,
 	tokenCache TokenCache,
 	loginAttempt LoginAttemptCache,
@@ -55,10 +65,49 @@ func NewUserBiz(
 		tokenStore:   tokenStore,
 		tx:           tx,
 		signer:       signer,
+		appLookup:    appLookup,
 		sessionCache: sessionCache,
 		tokenCache:   tokenCache,
 		loginAttempt: loginAttempt,
 	}
+}
+
+func (b *UserBiz) LoginWithOAuthCode(ctx context.Context, payload *OAuthCodePayload, applicationID int, ip, userAgent string) (*LoginResp, error) {
+	u, err := b.store.Get(ctx, payload.UserID)
+	if err != nil {
+		if db.IsNotFound(err) {
+			return nil, errors.New("user not found")
+		}
+		return nil, fmt.Errorf("get user: %w", err)
+	}
+	if u.Status != enum.UserStatusActive {
+		return nil, ErrAccountNotActive
+	}
+
+	sessionID := payload.SessionID
+	if sessionID == uuid.Nil {
+		sessionID = uuid.New()
+	}
+	jwtCfg := conf.Get().JWT
+
+	accessToken, err := b.signer.SignAccessToken(ctx, u.UUID, sessionID, u.Username, jwtCfg.AccessTokenTTL)
+	if err != nil {
+		return nil, fmt.Errorf("sign access token: %w", err)
+	}
+
+	refreshToken, err := b.issueRefreshTokenForApp(ctx, u.ID, applicationID, sessionID, ip, userAgent)
+	if err != nil {
+		return nil, fmt.Errorf("issue refresh token: %w", err)
+	}
+
+	if err := b.tokenCache.SetAccess(ctx, sessionID, jwtCfg.AccessTokenTTL); err != nil {
+		return nil, fmt.Errorf("cache access token: %w", err)
+	}
+	if err := b.tokenCache.SetRefresh(ctx, sessionID, jwtCfg.RefreshTokenTTL); err != nil {
+		return nil, fmt.Errorf("cache refresh token: %w", err)
+	}
+
+	return &LoginResp{AccessToken: accessToken, RefreshToken: refreshToken}, nil
 }
 
 type LoginResp struct {
@@ -176,6 +225,10 @@ func (b *UserBiz) issueRefreshToken(ctx context.Context, userID int, sessionID u
 	return b.createRefreshToken(ctx, userID, 0, sessionID, ip, userAgent)
 }
 
+func (b *UserBiz) issueRefreshTokenForApp(ctx context.Context, userID, applicationID int, sessionID uuid.UUID, ip, userAgent string) (string, error) {
+	return b.createRefreshToken(ctx, userID, applicationID, sessionID, ip, userAgent)
+}
+
 func (b *UserBiz) createRefreshToken(ctx context.Context, userID, applicationID int, sessionID uuid.UUID, ip, userAgent string) (string, error) {
 	plain, err := random.Alphanumeric(64)
 	if err != nil {
@@ -273,6 +326,23 @@ func (b *UserBiz) Refresh(ctx context.Context, refreshToken, ip, userAgent strin
 		return nil, ErrRefreshTokenExpired
 	}
 
+	if tok.ApplicationID != 0 {
+		app, err := b.appLookup.Get(ctx, tok.ApplicationID)
+		if err != nil {
+			if db.IsNotFound(err) {
+				_ = b.tokenStore.RevokeBySessionID(ctx, tok.SessionID)
+				_ = b.invalidateSession(ctx, tok.SessionID)
+				return nil, ErrApplicationDisabled
+			}
+			return nil, fmt.Errorf("get application: %w", err)
+		}
+		if app.Status != enum.ApplicationStatusActive {
+			_ = b.tokenStore.RevokeBySessionID(ctx, tok.SessionID)
+			_ = b.invalidateSession(ctx, tok.SessionID)
+			return nil, ErrApplicationDisabled
+		}
+	}
+
 	u, err := b.store.Get(ctx, tok.UserID)
 	if err != nil {
 		if db.IsNotFound(err) {
@@ -302,6 +372,8 @@ func (b *UserBiz) Refresh(ctx context.Context, refreshToken, ip, userAgent strin
 	var newRefreshToken string
 	if tok.ApplicationID == 0 {
 		newRefreshToken, err = b.issueRefreshToken(ctx, u.ID, newJwtSessionID, ip, userAgent)
+	} else {
+		newRefreshToken, err = b.issueRefreshTokenForApp(ctx, u.ID, tok.ApplicationID, newJwtSessionID, ip, userAgent)
 	}
 
 	if err != nil {
@@ -328,4 +400,145 @@ func (b *UserBiz) GetByUUID(ctx context.Context, userUUID uuid.UUID) (*db.User, 
 		return nil, fmt.Errorf("get user by uuid: %w", err)
 	}
 	return u, nil
+}
+
+func (b *UserBiz) Password(ctx context.Context, id int, oldPassword, newPassword string) error {
+	info, err := b.store.Get(ctx, id)
+	if err != nil {
+		if db.IsNotFound(err) {
+			return errors.New("user not found")
+		}
+		return fmt.Errorf("get user: %w", err)
+	}
+
+	if info.IsSystem {
+		return errors.New("system user password cannot be changed via this endpoint; use the CLI tool")
+	}
+
+	ok, err := password.Validate(oldPassword, string(info.Password))
+	if err != nil {
+		return fmt.Errorf("validate password: %w", err)
+	}
+	if !ok {
+		return ErrInvalidCredentials
+	}
+
+	hashed, err := password.Hash(newPassword)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+
+	if err := b.store.UpdatePassword(ctx, id, hashed); err != nil {
+		return fmt.Errorf("update password: %w", err)
+	}
+
+	_ = b.InvalidateAllSessions(ctx, id)
+	return nil
+}
+
+func (b *UserBiz) InvalidateAllSessions(ctx context.Context, userID int) error {
+	sys, err := b.store.GetSystem(ctx)
+	if err == nil && sys != nil && sys.ID == userID {
+		return errors.New("cannot revoke sessions for system user")
+	}
+
+	var errs []error
+
+	sessionIDs, err := b.tokenStore.ListActiveSessionsByUserID(ctx, userID)
+	if err != nil {
+		errs = append(errs, fmt.Errorf("list active sessions: %w", err))
+	}
+
+	if err := b.tokenStore.RevokeByUserID(ctx, userID); err != nil {
+		errs = append(errs, fmt.Errorf("revoke tokens: %w", err))
+	}
+
+	for _, sid := range sessionIDs {
+		if err := b.invalidateSession(ctx, sid); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	if err := b.sessionCache.DelAllByUser(ctx, userID); err != nil {
+		errs = append(errs, fmt.Errorf("clear sessions: %w", err))
+	}
+
+	if len(errs) > 0 {
+		return errors.Join(errs...)
+	}
+	return nil
+}
+
+type UserListSessionsItemResp struct {
+	SessionID     uuid.UUID  `json:"session_id"`
+	ApplicationID int        `json:"application_id"`
+	IP            string     `json:"ip"`
+	UserAgent     string     `json:"user_agent"`
+	CreatedAt     time.Time  `json:"created_at"`
+	ExpiresAt     time.Time  `json:"expires_at"`
+	LastActiveAt  *time.Time `json:"last_active_at"`
+	IsCurrent     bool       `json:"is_current"`
+}
+
+func (b *UserBiz) ListSessions(ctx context.Context, currentSessionID uuid.UUID, userID, page, perPage int) ([]UserListSessionsItemResp, int, error) {
+	list, total, err := b.tokenStore.List(ctx, userID, 0, page, perPage)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list sessions: %w", err)
+	}
+
+	views := make([]UserListSessionsItemResp, 0, len(list))
+	for _, t := range list {
+		views = append(views, UserListSessionsItemResp{
+			SessionID:     t.SessionID,
+			ApplicationID: t.ApplicationID,
+			IP:            t.IP,
+			UserAgent:     t.UserAgent,
+			CreatedAt:     t.CreatedAt,
+			ExpiresAt:     t.ExpiresAt,
+			LastActiveAt:  t.LastActiveAt,
+			IsCurrent:     t.SessionID == currentSessionID,
+		})
+	}
+	return views, total, nil
+}
+
+func (b *UserBiz) RevokeSession(ctx context.Context, userID int, sessionID uuid.UUID) error {
+	tok, err := b.tokenStore.GetBySessionID(ctx, sessionID)
+	if err != nil {
+		if db.IsNotFound(err) {
+			return errors.New("session not found")
+		}
+		return fmt.Errorf("get session: %w", err)
+	}
+	if tok.UserID != userID {
+		return errors.New("session not found")
+	}
+
+	if err := b.tokenStore.RevokeBySessionID(ctx, sessionID); err != nil {
+		return fmt.Errorf("revoke session: %w", err)
+	}
+	return b.invalidateSession(ctx, sessionID)
+}
+
+func (b *UserBiz) CheckSession(ctx context.Context, sid string) (userID int, userUUID uuid.UUID, ok bool) {
+	if sid == "" {
+		return 0, uuid.Nil, false
+	}
+	payload, err := b.sessionCache.Get(ctx, sid)
+	if err != nil || payload == nil {
+		return 0, uuid.Nil, false
+	}
+
+	remaining := payload.ExpiredAt - time.Now().Unix()
+	halfTTL := int64(consts.SessionTTL.Seconds() / 2)
+	if remaining < halfTTL {
+		go func(p SessionCachePayload) {
+			bgCtx := context.Background()
+			if err := b.sessionCache.Refresh(bgCtx, sid, &p, consts.SessionTTL); err != nil {
+				logger.Error("refresh session failed: %s", err)
+			}
+		}(*payload)
+	}
+
+	return payload.UserID, payload.UserUUID, true
 }

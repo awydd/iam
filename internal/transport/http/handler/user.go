@@ -1,6 +1,12 @@
 package handler
 
 import (
+	"errors"
+	"net/http"
+	"net/url"
+	"strings"
+	"text/template"
+
 	"github.com/awydd/iam/conf"
 	"github.com/awydd/iam/internal/biz"
 	"github.com/awydd/iam/internal/consts"
@@ -9,7 +15,9 @@ import (
 	"github.com/awydd/iam/pkg/response"
 	"github.com/awydd/iam/pkg/response/code"
 	"github.com/awydd/iam/pkg/utils"
+	"github.com/awydd/iam/templates"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 type UserHandler struct {
@@ -18,6 +26,61 @@ type UserHandler struct {
 
 func NewUserHandler(userBiz *biz.UserBiz) *UserHandler {
 	return &UserHandler{userBiz: userBiz}
+}
+
+var loginTpl = template.Must(template.ParseFS(templates.FS, "login.html"))
+
+type ShowLoginReq struct {
+	Redirect string `form:"redirect"`
+}
+
+func (h *UserHandler) validateRedirect(redirect string) (string, error) {
+	if redirect == "" {
+		return "/", nil
+	}
+
+	inputURL, err := url.Parse(redirect)
+	if err != nil {
+		return "/", nil
+	}
+
+	if inputURL.IsAbs() || inputURL.Host != "" {
+		return "", errors.New("prohibited external redirect")
+	}
+
+	if !strings.HasPrefix(redirect, "/") {
+		return "/", nil
+	}
+
+	return redirect, nil
+}
+
+func (h *UserHandler) ShowLogin(c *gin.Context) {
+	var params ShowLoginReq
+	if err := c.ShouldBindQuery(&params); err != nil {
+		response.Err(c, code.InvalidParams)
+		return
+	}
+
+	finalRedirect, err := h.validateRedirect(params.Redirect)
+	if err != nil {
+		logger.Error("validate redirect failed: %s", err)
+		finalRedirect = ""
+	}
+
+	if params.Redirect != "" && finalRedirect == "" {
+		logger.Warn("redirect url was blocked or invalid, input=%s", params.Redirect)
+	}
+
+	c.Header("Content-Type", "text/html; charset=utf-8")
+	c.Writer.WriteHeader(http.StatusOK)
+
+	if err := loginTpl.Execute(c.Writer, gin.H{
+		"Redirect":    finalRedirect,
+		"LoginApiUrl": conf.Get().HTTP.AuthLoginPath(),
+	}); err != nil {
+		logger.Error("render login template failed: %s", err)
+	}
 }
 
 type LoginReq struct {
@@ -110,6 +173,116 @@ func (h *UserHandler) Refresh(c *gin.Context) {
 	cookie := utils.Cookie()
 	cookie.Set(c.Writer, consts.CookieAccessToken, result.AccessToken, int(jwtCfg.AccessTokenTTL.Seconds()))
 	cookie.Set(c.Writer, consts.CookieRefreshToken, result.RefreshToken, int(jwtCfg.RefreshTokenTTL.Seconds()))
+
+	response.OK(c)
+}
+
+type ChangePasswordReq struct {
+	OldPassword string `json:"old_password" binding:"required,min=6,max=18"`
+	NewPassword string `json:"new_password" binding:"required,min=6,max=18"`
+}
+
+func (h *UserHandler) Password(c *gin.Context) {
+	userUUID, ok := middleware.UserUUIDFromContext(c)
+	if !ok {
+		response.Err(c, code.Unauthorized)
+		return
+	}
+
+	var body ChangePasswordReq
+	if err := c.ShouldBindJSON(&body); err != nil {
+		response.Err(c, code.InvalidParams)
+		return
+	}
+
+	ctx := c.Request.Context()
+
+	info, err := h.userBiz.GetByUUID(ctx, userUUID)
+	if err != nil {
+		response.Err(c, code.Unauthorized)
+		return
+	}
+
+	if err := h.userBiz.Password(ctx, info.ID, body.OldPassword, body.NewPassword); err != nil {
+		response.ErrMessage(c, code.BadRequest, err.Error())
+		return
+	}
+
+	cookie := utils.Cookie()
+	cookie.Delete(c.Writer, consts.CookieAccessToken)
+	cookie.Delete(c.Writer, consts.CookieRefreshToken)
+	cookie.Delete(c.Writer, consts.CookieSessionID)
+
+	response.OK(c)
+}
+
+type SessionListReq struct {
+	Pagination
+}
+
+func (h *UserHandler) ListSessions(c *gin.Context) {
+	userUUID, ok := middleware.UserUUIDFromContext(c)
+	if !ok {
+		response.Err(c, code.Unauthorized)
+		return
+	}
+	currentSessionID, _ := middleware.SessionIDFromContext(c)
+
+	var req SessionListReq
+	if err := c.ShouldBindQuery(&req); err != nil {
+		response.Err(c, code.InvalidParams)
+		return
+	}
+
+	ctx := c.Request.Context()
+
+	u, err := h.userBiz.GetByUUID(ctx, userUUID)
+	if err != nil {
+		response.Err(c, code.Unauthorized)
+		return
+	}
+
+	list, total, err := h.userBiz.ListSessions(ctx, currentSessionID, u.ID, req.Page, req.PerPage)
+	if err != nil {
+		response.ErrMessage(c, code.BadRequest, err.Error())
+		return
+	}
+
+	response.Success(c, ListResp{
+		Content: list,
+		Count:   total,
+	})
+}
+
+type RevokeSessionPathParams struct {
+	SessionID UUIDParam `uri:"session_id" binding:"required"`
+}
+
+func (h *UserHandler) RevokeSession(c *gin.Context) {
+	userUUID, ok := middleware.UserUUIDFromContext(c)
+	if !ok {
+		response.Err(c, code.Unauthorized)
+		return
+	}
+
+	var params RevokeSessionPathParams
+	if err := c.ShouldBindUri(&params); err != nil {
+		response.Err(c, code.InvalidParams)
+		return
+	}
+
+	ctx := c.Request.Context()
+
+	u, err := h.userBiz.GetByUUID(ctx, userUUID)
+	if err != nil {
+		response.Err(c, code.Unauthorized)
+		return
+	}
+
+	if err := h.userBiz.RevokeSession(ctx, u.ID, uuid.UUID(params.SessionID)); err != nil {
+		response.ErrMessage(c, code.BadRequest, err.Error())
+		return
+	}
 
 	response.OK(c)
 }

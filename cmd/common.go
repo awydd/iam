@@ -6,12 +6,50 @@ import (
 	"time"
 
 	"github.com/awydd/iam/conf"
+	"github.com/awydd/iam/internal/biz"
 	"github.com/awydd/iam/internal/infra/cache/redis"
 	"github.com/awydd/iam/internal/infra/database"
+	"github.com/awydd/iam/internal/infra/store"
 	"github.com/awydd/iam/internal/logger"
 	"github.com/awydd/iam/pkg/password"
 	"github.com/awydd/iam/pkg/utils"
 )
+
+func startTokenCleanupScheduler(ctx context.Context, interval time.Duration) {
+	tokenStore := store.NewTokenStore(database.DB())
+	tokenBiz := biz.NewTokenBiz(tokenStore, nil, nil)
+
+	go func() {
+		cleanup := func() {
+			runCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+			defer cancel()
+
+			total, err := tokenBiz.CleanExpiredOrRevoked(runCtx)
+			if err != nil {
+				logger.Error("token cleanup failed: %s", err)
+				return
+			}
+			if total > 0 {
+				logger.Info("token cleanup done, removed %d rows total", total)
+			}
+		}
+
+		cleanup()
+
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				logger.Info("token cleanup scheduler stopped")
+				return
+			case <-ticker.C:
+				cleanup()
+			}
+		}
+	}()
+}
 
 func setup() error {
 	if err := conf.Init(); err != nil {

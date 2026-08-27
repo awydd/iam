@@ -15,3 +15,7 @@ const (
 	RedisLoginAttemptLock   = "login:lock:user:"
 	RedisLoginAttemptFailIP = "login:fail:ip:"
 )
+
+const (
+	RedisOAuthCode = "roac"
+)

@@ -12,4 +12,18 @@ var (
 	ErrRefreshTokenInvalid = errors.New("invalid refresh token")
 	ErrRefreshTokenExpired = errors.New("refresh token expired or revoked")
 	ErrUserNotFound        = errors.New("user not found")
+	ErrApplicationDisabled = errors.New("application is disabled")
+)
+
+// application
+var (
+	ErrClientIDRequired  = errors.New("client_id is required")
+	ErrClientSecretWrong = errors.New("client secret is invalid")
+)
+
+// oauth
+var (
+	ErrClientNotFound     = errors.New("client not found")
+	ErrClientDisabled     = errors.New("client application is disabled")
+	ErrRedirectURIInvalid = errors.New("redirect_uri is not registered for this client")
 )

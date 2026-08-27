@@ -89,6 +89,27 @@ func (s *UserStore) GetSystem(ctx context.Context) (*db.User, error) {
 	return info, nil
 }
 
+func (s *UserStore) Duplicate(ctx context.Context, username, email string, id ...int) (bool, error) {
+	q := s.Client(ctx).User.Query().
+		Where(
+			user.Or(
+				user.UsernameEQ(username),
+				user.EmailEQ(email),
+			),
+		)
+
+	if len(id) > 0 && id[0] > 0 {
+		q = q.Where(user.IDNEQ(id[0]))
+	}
+
+	exist, err := q.Exist(ctx)
+	if err != nil {
+		return false, fmt.Errorf("check user duplicate: %w", err)
+	}
+
+	return exist, nil
+}
+
 func (s *UserStore) InitCreate(ctx context.Context, username, email, passwordHash string, status enum.UserStatus) (*db.User, error) {
 	client := s.Client(ctx)
 
@@ -116,11 +137,37 @@ func (s *UserStore) InitCreate(ctx context.Context, username, email, passwordHas
 	return res, nil
 }
 
+func (s *UserStore) Update(ctx context.Context, id int, username, email string, status enum.UserStatus, hashed string) (*db.User, error) {
+	builder := s.Client(ctx).User.UpdateOneID(id).
+		SetEmail(email).
+		SetUsername(username).
+		SetStatus(status)
+
+	if hashed != "" {
+		builder.SetPassword([]byte(hashed))
+	}
+
+	res, err := builder.Save(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("update user %d: %w", id, err)
+	}
+	return res, nil
+}
+
 func (s *UserStore) UpdateLastLogin(ctx context.Context, id int, at time.Time) error {
 	if err := s.Client(ctx).User.UpdateOneID(id).
 		SetLastLoginAt(at).
 		Exec(ctx); err != nil {
 		return fmt.Errorf("update last login for user %d: %w", id, err)
+	}
+	return nil
+}
+
+func (s *UserStore) UpdatePassword(ctx context.Context, id int, hashed string) error {
+	if err := s.Client(ctx).User.UpdateOneID(id).
+		SetPassword([]byte(hashed)).
+		Exec(ctx); err != nil {
+		return fmt.Errorf("update password for user %d: %w", id, err)
 	}
 	return nil
 }

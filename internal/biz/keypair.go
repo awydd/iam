@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto"
 	"crypto/ecdsa"
+	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
@@ -17,16 +18,25 @@ import (
 	"github.com/awydd/iam/internal/infra/ent/db"
 	"github.com/awydd/iam/internal/jwt"
 	"github.com/awydd/iam/internal/logger"
+	"github.com/google/uuid"
 	"github.com/lestrrat-go/jwx/v4/jwk"
 )
 
 var _ jwt.KeyProvider = (*KeypairBiz)(nil)
 
 type KeypairStore interface {
+	List(ctx context.Context, page, perPage int) ([]*db.Keypair, int, error)
 	ListVerifiable(ctx context.Context) ([]*db.Keypair, error)
+
 	GetActiveSigningKey(ctx context.Context) (*db.Keypair, error)
 	GetByKid(ctx context.Context, kid string) (*db.Keypair, error)
+
 	Create(ctx context.Context, kid string, algorithm enum.KeypairAlgorithm, publicKey, privateKey string) (*db.Keypair, error)
+
+	Retire(ctx context.Context, kid string) error
+	Downgrade(ctx context.Context, kid string) error
+
+	DeleteRetiredBefore(ctx context.Context, before time.Time) (int, error)
 }
 
 type keypairCache struct {
@@ -237,4 +247,154 @@ func (b *KeypairBiz) JWKS(ctx context.Context) (jwt.JWKSet, error) {
 		}
 	}
 	return set, nil
+}
+
+const keypairRetiredRetention = 30 * 24 * time.Hour
+
+func (b *KeypairBiz) CleanRetired(ctx context.Context) (int, error) {
+	cutoff := time.Now().Add(-keypairRetiredRetention)
+	affected, err := b.store.DeleteRetiredBefore(ctx, cutoff)
+	if err != nil {
+		return 0, fmt.Errorf("clean retired keypairs: %w", err)
+	}
+	return affected, nil
+}
+
+type KeypairListItemResp struct {
+	Kid         string                `json:"kid"`
+	Algorithm   enum.KeypairAlgorithm `json:"algorithm"`
+	Status      enum.KeypairStatus    `json:"status"`
+	ActivatedAt time.Time             `json:"activated_at"`
+	RetireAt    *time.Time            `json:"retire_at,omitempty"`
+}
+
+func (b *KeypairBiz) List(ctx context.Context, page, perPage int) ([]KeypairListItemResp, int, error) {
+	list, total, err := b.store.List(ctx, page, perPage)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list keypairs: %w", err)
+	}
+
+	views := make([]KeypairListItemResp, 0, len(list))
+	for _, kp := range list {
+		views = append(views, KeypairListItemResp{
+			Kid:         kp.Kid,
+			Algorithm:   kp.Algorithm,
+			Status:      kp.Status,
+			ActivatedAt: kp.ActivatedAt,
+			RetireAt:    kp.RetireAt,
+		})
+	}
+	return views, total, nil
+}
+
+type KeypairRotateResp struct {
+	Kid string `json:"kid"`
+}
+
+func (b *KeypairBiz) Rotate(ctx context.Context) (*KeypairRotateResp, error) {
+	kid, publicPEM, privatePEM, err := generateRSAKeypairPEM()
+	if err != nil {
+		return nil, fmt.Errorf("generate rsa keypair: %w", err)
+	}
+
+	var newKid string
+	err = b.tx.WithTx(ctx, func(ctx context.Context) error {
+		oldActive, err := b.store.GetActiveSigningKey(ctx)
+		if err != nil && !db.IsNotFound(err) {
+			return fmt.Errorf("get active signing key: %w", err)
+		}
+
+		kp, err := b.store.Create(ctx, kid, enum.KeypairAlgoRS256, publicPEM, privatePEM)
+		if err != nil {
+			return fmt.Errorf("create keypair: %w", err)
+		}
+		newKid = kp.Kid
+
+		if oldActive != nil {
+			if err := b.store.Downgrade(ctx, oldActive.Kid); err != nil {
+				return fmt.Errorf("downgrade old active key: %w", err)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	b.invalidateCache()
+	return &KeypairRotateResp{Kid: newKid}, nil
+}
+
+func (b *KeypairBiz) Downgrade(ctx context.Context, kid string) error {
+	kp, err := b.store.GetByKid(ctx, kid)
+	if err != nil {
+		if db.IsNotFound(err) {
+			return errors.New("keypair not found")
+		}
+		return fmt.Errorf("get keypair: %w", err)
+	}
+
+	if kp.Status == enum.KeypairStatusActive {
+		return errors.New("cannot downgrade the active signing key directly; use Rotate to replace it first")
+	}
+	if kp.Status == enum.KeypairStatusGrace {
+		return errors.New("keypair is already in grace status")
+	}
+
+	if err := b.store.Downgrade(ctx, kid); err != nil {
+		return fmt.Errorf("downgrade keypair: %w", err)
+	}
+
+	b.invalidateCache()
+	return nil
+}
+
+func (b *KeypairBiz) Retire(ctx context.Context, kid string) error {
+	kp, err := b.store.GetByKid(ctx, kid)
+	if err != nil {
+		if db.IsNotFound(err) {
+			return errors.New("keypair not found")
+		}
+		return fmt.Errorf("get keypair: %w", err)
+	}
+
+	switch kp.Status {
+	case enum.KeypairStatusActive:
+		return errors.New("cannot retire the active signing key; downgrade it to grace first")
+	case enum.KeypairStatusRetired:
+		return errors.New("keypair is already retired")
+	}
+
+	if err := b.store.Retire(ctx, kid); err != nil {
+		return fmt.Errorf("retire keypair: %w", err)
+	}
+
+	b.invalidateCache()
+	return nil
+}
+
+func generateRSAKeypairPEM() (kid, publicPEM, privatePEM string, err error) {
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return "", "", "", fmt.Errorf("generate rsa key: %w", err)
+	}
+
+	pubDER, err := x509.MarshalPKIXPublicKey(&priv.PublicKey)
+	if err != nil {
+		return "", "", "", fmt.Errorf("marshal public key: %w", err)
+	}
+	pubPEM := string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubDER}))
+	privPEM := string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(priv)}))
+
+	return uuid.NewString(), pubPEM, privPEM, nil
+}
+
+func (b *KeypairBiz) invalidateCache() {
+	b.cache.mu.Lock()
+	defer b.cache.mu.Unlock()
+	b.cache.verifyKeys = nil
+	b.cache.loadedAt = time.Time{}
+	b.cache.signingKid = ""
+	b.cache.signingPriv = nil
+	b.cache.signingAt = time.Time{}
 }

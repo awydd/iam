@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IAM 登录</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: #f4f6f9;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            color: #1f2328;
+            padding: 20px;
+        }
+
+        .login-card {
+            background: #ffffff;
+            padding: 40px 30px;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(149, 157, 165, 0.15);
+            width: 100%;
+            max-width: 400px;
+        }
+
+        h1 {
+            font-size: 24px;
+            margin-bottom: 24px;
+            text-align: center;
+            color: #1f2328;
+            font-weight: 600;
+        }
+
+        #error-msg {
+            background-color: #ffebe9;
+            color: #1f2328;
+            padding: 10px 14px;
+            border-radius: 6px;
+            border: 1px solid #ffc1c0;
+            font-size: 14px;
+            margin-bottom: 20px;
+            word-break: break-word;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 14px;
+            margin-bottom: 8px;
+            color: #1f2328;
+            font-weight: 500;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 1px solid #d1d9e0;
+            border-radius: 6px;
+            font-size: 16px;
+            transition: all 0.2s ease;
+            outline: none;
+        }
+
+        .form-group input:focus {
+            border-color: #0969da;
+            background-color: #fff;
+            box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.15);
+        }
+
+        #submitBtn {
+            width: 100%;
+            padding: 12px;
+            background-color: #1f883d;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            margin-top: 10px;
+        }
+
+        #submitBtn:hover {
+            background-color: #1c8139;
+        }
+
+        #submitBtn:active {
+            background-color: #1a7534;
+        }
+
+        #submitBtn:disabled {
+            background-color: #94d3a2;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="login-card">
+        <h1>IAM 登录</h1>
+        <p id="error-msg" style="display:none;"></p>
+
+        <form id="loginForm">
+            <input type="hidden" id="redirect" name="redirect" value="{{.Redirect}}">
+
+            <div class="form-group">
+                <label for="username">用户名</label>
+                <input type="text" id="username" name="username" required autofocus autocomplete="username"
+                    maxlength="100">
+            </div>
+
+            <div class="form-group">
+                <label for="password">密码</label>
+                <input type="password" id="password" name="password" required autocomplete="current-password"
+                    maxlength="128">
+            </div>
+
+            <button type="submit" id="submitBtn">登录</button>
+        </form>
+    </div>
+
+    <script>
+        const loginForm = document.getElementById('loginForm');
+        const submitBtn = document.getElementById('submitBtn');
+        const errorEl = document.getElementById('error-msg');
+
+        async function handleLogin(e) {
+            e.preventDefault();
+
+            errorEl.style.display = 'none';
+
+            const usernameInput = document.getElementById('username');
+            const passwordInput = document.getElementById('password');
+
+            const data = {
+                username: usernameInput.value.trim(),
+                password: passwordInput.value
+            };
+
+            if (!data.username || !data.password) {
+                errorEl.innerText = 'Username and password are required';
+                errorEl.style.display = 'block';
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.innerText = 'Signing in...';
+
+            try {
+                const response = await fetch("{{.LoginApiUrl}}", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify(data)
+                });
+
+                if (response.ok) {
+                    passwordInput.value = '';
+                    usernameInput.value = '';
+
+                    let redirectUrl = document.getElementById('redirect').value.trim();
+
+                    if (redirectUrl) {
+                        window.location.replace(redirectUrl);
+                    } else {
+                        window.location.replace("/");
+                    }
+                } else {
+                    const resData = await response.json().catch(() => ({}));
+                    errorEl.innerText = resData.message || 'Invalid username or password';
+                    errorEl.style.display = 'block';
+
+                    submitBtn.disabled = false;
+                    submitBtn.innerText = '登录';
+                }
+            } catch (err) {
+                errorEl.innerText = 'Network error, please try again later';
+                errorEl.style.display = 'block';
+
+                submitBtn.disabled = false;
+                submitBtn.innerText = '登录';
+            }
+        }
+
+        loginForm.addEventListener('submit', handleLogin);
+    </script>
+</body>
+
+</html>

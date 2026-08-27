@@ -52,8 +52,15 @@ func registerRoutes(r *gin.Engine, app *wire.App) {
 	api := r.Group(conf.Get().HTTP.APIBase())
 	auth := api.Group("/auth")
 	{
+		auth.GET("/login", app.User.ShowLogin)
 		auth.POST("/login", app.User.Login)
 		auth.POST("/refresh", app.User.Refresh)
+	}
+
+	oauth := api.Group("/oauth")
+	{
+		oauth.GET("/authorize", app.OAuth.Authorize)
+		oauth.POST("/token", app.OAuth.ExchangeToken)
 	}
 
 	protected := api.Group("")
@@ -61,9 +68,29 @@ func registerRoutes(r *gin.Engine, app *wire.App) {
 
 	protected.POST("/auth/logout", app.User.Logout)
 	protected.GET("/auth/me", app.User.Me)
+	protected.PUT("/auth/me/password", app.User.Password)
+	protected.GET("/auth/sessions", app.User.ListSessions)
+	protected.DELETE("/auth/sessions/:session_id", app.User.RevokeSession)
 
 	admin := protected.Group("")
 	admin.Use(middleware.RequireSystem(app.UserBiz))
 	{
+		admin.GET("/keypairs", app.Keypair.List)
+		admin.POST("/keypairs/rotate", app.Keypair.Rotate)
+		admin.PUT("/keypairs/:kid/downgrade", app.Keypair.Downgrade)
+		admin.PUT("/keypairs/:kid/retire", app.Keypair.Retire)
+
+		admin.GET("/tokens", app.Token.List)
+		admin.GET("/tokens/:id", app.Token.Info)
+		admin.DELETE("/tokens/:id", app.Token.Revoke)
+
+		admin.GET("/applications", app.Application.List)
+		admin.GET("/applications/:id", app.Application.Info)
+		admin.POST("/applications", app.Application.Create)
+		admin.PUT("/applications/:id", app.Application.Update)
+		admin.PUT("/applications/:id/status", app.Application.UpdateStatus)
+		admin.PUT("/applications/:id/ttl", app.Application.UpdateTTL)
+		admin.PUT("/applications/:id/secret", app.Application.UpdateSecret)
+		admin.DELETE("/applications/:id", app.Application.Delete)
 	}
 }
