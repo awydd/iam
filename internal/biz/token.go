@@ -2,6 +2,7 @@ package biz
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -48,10 +49,11 @@ type TokenStore interface {
 type TokenBiz struct {
 	store           TokenStore
 	lastActiveCache LastActiveCache
+	tokenCache      TokenCache
 }
 
-func NewTokenBiz(store TokenStore, lastActiveCache LastActiveCache) *TokenBiz {
-	return &TokenBiz{store: store, lastActiveCache: lastActiveCache}
+func NewTokenBiz(store TokenStore, lastActiveCache LastActiveCache, tokenCache TokenCache) *TokenBiz {
+	return &TokenBiz{store: store, lastActiveCache: lastActiveCache, tokenCache: tokenCache}
 }
 
 func (b *TokenBiz) Touch(ctx context.Context, sessionID uuid.UUID) {
@@ -101,4 +103,117 @@ func (b *TokenBiz) CleanExpiredOrRevoked(ctx context.Context) (int, error) {
 		logger.Info("token cleanup: removed %d rows this batch, %d total so far", affected, total)
 	}
 	return total, nil
+}
+
+type TokenListItemResp struct {
+	ID              int            `json:"id"`
+	UserID          int            `json:"user_id"`
+	Username        string         `json:"username"`
+	ApplicationID   int            `json:"application_id"`
+	ApplicationName string         `json:"application_name"`
+	SessionID       uuid.UUID      `json:"session_id"`
+	Type            enum.TokenType `json:"type"`
+	IP              string         `json:"ip"`
+	UserAgent       string         `json:"user_agent"`
+	ExpiresAt       time.Time      `json:"expires_at"`
+}
+
+func (b *TokenBiz) List(ctx context.Context, userID, applicationID, page, perPage int) ([]TokenListItemResp, int, error) {
+	list, total, err := b.store.List(ctx, userID, applicationID, page, perPage)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list tokens: %w", err)
+	}
+
+	views := make([]TokenListItemResp, 0, len(list))
+	for _, t := range list {
+		view := TokenListItemResp{
+			ID:            t.ID,
+			UserID:        t.UserID,
+			ApplicationID: t.ApplicationID,
+			SessionID:     t.SessionID,
+			Type:          t.Type,
+			IP:            t.IP,
+			UserAgent:     t.UserAgent,
+			ExpiresAt:     t.ExpiresAt,
+		}
+		if t.Edges.User != nil {
+			view.Username = t.Edges.User.Username
+		}
+		if t.Edges.Application != nil {
+			view.ApplicationName = t.Edges.Application.Name
+		}
+		views = append(views, view)
+	}
+	return views, total, nil
+}
+
+type TokenInfoResp struct {
+	ID              int            `json:"id"`
+	UserID          int            `json:"user_id"`
+	Username        string         `json:"username"`
+	ApplicationID   int            `json:"application_id"`
+	ApplicationName string         `json:"application_name"`
+	SessionID       uuid.UUID      `json:"session_id"`
+	Type            enum.TokenType `json:"type"`
+	IP              string         `json:"ip"`
+	UserAgent       string         `json:"user_agent"`
+	ExpiresAt       time.Time      `json:"expires_at"`
+}
+
+func (b *TokenBiz) Info(ctx context.Context, id int) (*TokenInfoResp, error) {
+	t, err := b.store.Get(ctx, id)
+	if err != nil {
+		if db.IsNotFound(err) {
+			return nil, errors.New("token not found")
+		}
+		return nil, fmt.Errorf("get token: %w", err)
+	}
+
+	view := &TokenInfoResp{
+		ID:            t.ID,
+		UserID:        t.UserID,
+		ApplicationID: t.ApplicationID,
+		SessionID:     t.SessionID,
+		Type:          t.Type,
+		IP:            t.IP,
+		UserAgent:     t.UserAgent,
+		ExpiresAt:     t.ExpiresAt,
+	}
+	if t.Edges.User != nil {
+		view.Username = t.Edges.User.Username
+	}
+	if t.Edges.Application != nil {
+		view.ApplicationName = t.Edges.Application.Name
+	}
+
+	return view, nil
+}
+
+func (b *TokenBiz) Revoke(ctx context.Context, id int) error {
+	tok, err := b.store.Get(ctx, id)
+	if err != nil {
+		if db.IsNotFound(err) {
+			return errors.New("token not found")
+		}
+		return fmt.Errorf("get token: %w", err)
+	}
+
+	if tok.RevokedAt != nil {
+		return errors.New("token already revoked")
+	}
+
+	if err := b.store.Revoke(ctx, id); err != nil {
+		return fmt.Errorf("revoke token: %w", err)
+	}
+
+	if b.tokenCache != nil {
+		if err := b.tokenCache.DelAccess(ctx, tok.SessionID); err != nil {
+			logger.Error("del access cache failed: session_id=%s err=%v", tok.SessionID, err)
+		}
+		if err := b.tokenCache.DelRefresh(ctx, tok.SessionID); err != nil {
+			logger.Error("del refresh cache failed: session_id=%s err=%v", tok.SessionID, err)
+		}
+	}
+
+	return nil
 }

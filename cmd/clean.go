@@ -45,7 +45,7 @@ func runTokenCleanupOnce() error {
 	}
 
 	tokenStore := store.NewTokenStore(database.DB())
-	tokenBiz := biz.NewTokenBiz(tokenStore, nil)
+	tokenBiz := biz.NewTokenBiz(tokenStore, nil, nil)
 
 	total, err := tokenBiz.CleanExpiredOrRevoked(ctx)
 	if err != nil {

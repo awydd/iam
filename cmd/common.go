@@ -17,7 +17,7 @@ import (
 
 func startTokenCleanupScheduler(ctx context.Context, interval time.Duration) {
 	tokenStore := store.NewTokenStore(database.DB())
-	tokenBiz := biz.NewTokenBiz(tokenStore, nil)
+	tokenBiz := biz.NewTokenBiz(tokenStore, nil, nil)
 
 	go func() {
 		cleanup := func() {

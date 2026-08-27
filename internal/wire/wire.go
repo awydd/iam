@@ -17,6 +17,7 @@ import (
 type App struct {
 	Keypair *handler.KeypairHandler
 	User    *handler.UserHandler
+	Token   *handler.TokenHandler
 
 	TokenBiz *biz.TokenBiz
 	UserBiz  *biz.UserBiz
@@ -28,6 +29,7 @@ type App struct {
 var handlerSet = wire.NewSet(
 	handler.NewKeypairHandler,
 	handler.NewUserHandler,
+	handler.NewTokenHandler,
 )
 
 var bizSet = wire.NewSet(

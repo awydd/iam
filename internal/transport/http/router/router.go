@@ -72,5 +72,9 @@ func registerRoutes(r *gin.Engine, app *wire.App) {
 		admin.POST("/keypairs/rotate", app.Keypair.Rotate)
 		admin.PUT("/keypairs/:kid/downgrade", app.Keypair.Downgrade)
 		admin.PUT("/keypairs/:kid/retire", app.Keypair.Retire)
+
+		admin.GET("/tokens", app.Token.List)
+		admin.GET("/tokens/:id", app.Token.Info)
+		admin.DELETE("/tokens/:id", app.Token.Revoke)
 	}
 }
