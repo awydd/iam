@@ -36,6 +36,12 @@ export const staticRoutes: RouteRecordRaw[] = [
         component: () => import('@/views/token/ListView.vue'),
         meta: { icon: 'ticket', name: 'token' },
       },
+      {
+        path: 'applications',
+        name: 'applications',
+        component: () => import('@/views/application/ListView.vue'),
+        meta: { icon: 'grid', name: 'application' },
+      },
     ],
   },
   {

@@ -1,3 +1,4 @@
+import application from './application'
 import common from './common'
 import dashboard from './dashboard'
 import keypair from './keypair'
@@ -14,4 +15,5 @@ export default {
   user,
   keypair,
   token,
+  application,
 }
