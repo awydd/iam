@@ -3,6 +3,7 @@ import dashboard from './dashboard'
 import keypair from './keypair'
 import layout from './layout'
 import login from './login'
+import token from './token'
 import user from './user'
 
 export default {
@@ -12,4 +13,5 @@ export default {
   layout,
   user,
   keypair,
+  token,
 }
