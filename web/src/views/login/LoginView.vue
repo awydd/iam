@@ -40,7 +40,7 @@ async function handleSubmit() {
     } else {
       errorMsg.value = data?.message || t('login.invalidCredentials')
     }
-  } catch (err) {
+  } catch {
     errorMsg.value = t('login.invalidCredentials')
   } finally {
     loading.value = false
