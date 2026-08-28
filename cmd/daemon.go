@@ -43,7 +43,7 @@ func getRunningPID() (int, error) {
 	if isProcessRunning(pid) {
 		return pid, nil
 	}
-	return 0, errors.New("process not running")
+	return 0, errors.New("进程未运行")
 }
 
 func isProcessRunning(pid int) bool {

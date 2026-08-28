@@ -10,7 +10,7 @@ import (
 
 var startCmd = &cobra.Command{
 	Use:   "start",
-	Short: "Start IAM server in background",
+	Short: "在后台启动 IAM 服务",
 	Run: func(cmd *cobra.Command, args []string) {
 		start()
 	},
@@ -18,13 +18,13 @@ var startCmd = &cobra.Command{
 
 func start() {
 	if pid, err := getRunningPID(); err == nil {
-		logger.Warn("iam server is already running with PID %d", pid)
+		logger.Warn("IAM 服务已经在运行中，PID 为 %d", pid)
 		return
 	}
 
 	binary, err := os.Executable()
 	if err != nil {
-		logger.Fatal("failed to get executable path: %v", err)
+		logger.Fatal("获取可执行文件路径失败: %v", err)
 	}
 
 	subArgs := []string{"server"}
@@ -36,10 +36,10 @@ func start() {
 	childCmd.Stdin = nil
 
 	if err := childCmd.Start(); err != nil {
-		logger.Fatal("failed to start background process: %v", err)
+		logger.Fatal("启动后台进程失败: %v", err)
 	}
 
-	logger.Info("iam server started in background (PID: %d)", childCmd.Process.Pid)
+	logger.Info("IAM 服务已在后台启动 (PID: %d)", childCmd.Process.Pid)
 }
 
 func init() {

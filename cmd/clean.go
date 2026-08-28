@@ -15,12 +15,12 @@ import (
 
 var cleanCmd = &cobra.Command{
 	Use:   "clean",
-	Short: "Clean up stale or expired data (see subcommands)",
+	Short: "清理过期或失效的数据",
 }
 
 var cleanTokenCmd = &cobra.Command{
 	Use:   "token",
-	Short: "Clean up expired or revoked tokens (runs once then exits)",
+	Short: "清理过期或已撤销的令牌",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runTokenCleanupOnce()
 	},
@@ -28,12 +28,12 @@ var cleanTokenCmd = &cobra.Command{
 
 func runTokenCleanupOnce() error {
 	if err := conf.Init(); err != nil {
-		return fmt.Errorf("failed to init config: %w", err)
+		return fmt.Errorf("初始化配置失败: %w", err)
 	}
 	cfg := conf.Get()
 
 	if err := database.Init(cfg.Database, false); err != nil {
-		return fmt.Errorf("failed to init database: %w", err)
+		return fmt.Errorf("初始化数据库失败: %w", err)
 	}
 	defer database.Close()
 
@@ -41,7 +41,7 @@ func runTokenCleanupOnce() error {
 	defer cancel()
 
 	if err := database.Migrate(ctx); err != nil {
-		return fmt.Errorf("failed to run database migration: %w", err)
+		return fmt.Errorf("执行数据库迁移失败: %w", err)
 	}
 
 	tokenStore := store.NewTokenStore(database.DB())
@@ -49,7 +49,7 @@ func runTokenCleanupOnce() error {
 
 	total, err := tokenBiz.CleanExpiredOrRevoked(ctx)
 	if err != nil {
-		return fmt.Errorf("token cleanup failed: %w", err)
+		return fmt.Errorf("清理令牌失败: %w", err)
 	}
 
 	logger.Info("token cleanup done, removed %d rows total", total)
@@ -58,7 +58,7 @@ func runTokenCleanupOnce() error {
 
 var cleanKeypairCmd = &cobra.Command{
 	Use:   "keypair",
-	Short: "Clean up retired keypairs older than the retention window (runs once then exits)",
+	Short: "清理超过保留期限的已退役密钥对",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runKeypairCleanupOnce()
 	},
@@ -66,12 +66,12 @@ var cleanKeypairCmd = &cobra.Command{
 
 func runKeypairCleanupOnce() error {
 	if err := conf.Init(); err != nil {
-		return fmt.Errorf("failed to init config: %w", err)
+		return fmt.Errorf("初始化配置失败: %w", err)
 	}
 	cfg := conf.Get()
 
 	if err := database.Init(cfg.Database, false); err != nil {
-		return fmt.Errorf("failed to init database: %w", err)
+		return fmt.Errorf("初始化数据库失败: %w", err)
 	}
 	defer database.Close()
 
@@ -79,7 +79,7 @@ func runKeypairCleanupOnce() error {
 	defer cancel()
 
 	if err := database.Migrate(ctx); err != nil {
-		return fmt.Errorf("failed to run database migration: %w", err)
+		return fmt.Errorf("执行数据库迁移失败: %w", err)
 	}
 
 	keypairStore := store.NewKeypairStore(database.DB())
@@ -87,7 +87,7 @@ func runKeypairCleanupOnce() error {
 
 	total, err := keypairBiz.CleanRetired(ctx)
 	if err != nil {
-		return fmt.Errorf("keypair cleanup failed: %w", err)
+		return fmt.Errorf("清理密钥对失败: %w", err)
 	}
 
 	logger.Info("keypair cleanup done, removed %d rows total", total)

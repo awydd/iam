@@ -26,7 +26,7 @@ func startTokenCleanupScheduler(ctx context.Context, interval time.Duration) {
 
 			total, err := tokenBiz.CleanExpiredOrRevoked(runCtx)
 			if err != nil {
-				logger.Error("token cleanup failed: %s", err)
+				logger.Error("清理令牌失败: %s", err)
 				return
 			}
 			if total > 0 {
@@ -42,7 +42,7 @@ func startTokenCleanupScheduler(ctx context.Context, interval time.Duration) {
 		for {
 			select {
 			case <-ctx.Done():
-				logger.Info("token cleanup scheduler stopped")
+				logger.Info("令牌清理调度器已停止")
 				return
 			case <-ticker.C:
 				cleanup()
@@ -53,7 +53,7 @@ func startTokenCleanupScheduler(ctx context.Context, interval time.Duration) {
 
 func setup() error {
 	if err := conf.Init(); err != nil {
-		return fmt.Errorf("failed to init config: %w", err)
+		return fmt.Errorf("初始化配置失败: %w", err)
 	}
 
 	cfg := conf.Get()
@@ -65,7 +65,7 @@ func setup() error {
 	utils.InitCookieUtil(cfg.Cookie)
 
 	if err := logger.Init(cfg.Logger); err != nil {
-		return fmt.Errorf("failed to init logger: %w", err)
+		return fmt.Errorf("初始化日志失败: %w", err)
 	}
 
 	password.Init(&password.Config{
@@ -79,17 +79,17 @@ func setup() error {
 	})
 
 	if err := database.Init(cfg.Database, cfg.IsDev()); err != nil {
-		return fmt.Errorf("failed to init database: %w", err)
+		return fmt.Errorf("初始化数据库失败: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := database.Migrate(ctx); err != nil {
-		return fmt.Errorf("failed to run database migration: %w", err)
+		return fmt.Errorf("执行数据库迁移失败: %w", err)
 	}
 
 	if err := redis.Init(cfg.Redis); err != nil {
-		return fmt.Errorf("failed to init redis: %w", err)
+		return fmt.Errorf("初始化 Redis 失败: %w", err)
 	}
 
 	logger.Info("setup completed, env=%s", cfg.Env)
@@ -98,13 +98,13 @@ func setup() error {
 
 func release() {
 	if err := database.Close(); err != nil {
-		logger.Error("failed to close database: %s", err)
+		logger.Error("关闭数据库失败: %s", err)
 	}
 
 	if err := redis.Close(); err != nil {
-		logger.Error("failed to close redis: %s", err)
+		logger.Error("关闭 Redis 失败: %s", err)
 	}
 
-	logger.Info("releasing resources")
+	logger.Info("正在释放资源")
 	_ = logger.Sync()
 }
