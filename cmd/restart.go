@@ -8,7 +8,7 @@ import (
 
 var restartCmd = &cobra.Command{
 	Use:   "restart",
-	Short: "Restart IAM background server",
+	Short: "重启 IAM 后台服务",
 	Run: func(cmd *cobra.Command, args []string) {
 		stop()
 

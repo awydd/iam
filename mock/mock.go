@@ -1,32 +1,28 @@
-// Quick local test harness for the IAM OAuth2 authorize/token flow.
+// 用于测试 IAM OAuth2 授权码和令牌流程的本地测试程序。
 //
-// Usage:
+// 使用方法：
 //
-//	# Scenario 1: Confidential Client, credentials via HTTP Basic Auth (RFC 6749 recommended)
+//	# 场景 1：机密客户端，通过 HTTP Basic Auth 传递凭证（推荐）
 //	go run main.go -mode=confidential-basic \
 //	  -client-id=internal-app-001 -client-secret=your-secret
 //
-//	# Scenario 2: Confidential Client, credentials via request body (legacy but valid)
+//	# 场景 2：机密客户端，通过请求体传递凭证
 //	go run main.go -mode=confidential-body \
 //	  -client-id=internal-app-001 -client-secret=your-secret
 //
-//	# Scenario 3: Confidential Client WITHOUT secret — negative test, IAM must reject
-//	# this at /token exchange with "invalid client credentials" (ErrClientSecretWrong)
+//	# 场景 3：机密客户端且无密钥 - 负向测试，IAM 必须在 /token 阶段拒绝
 //	go run main.go -mode=confidential-no-secret \
 //	  -client-id=internal-app-001
 //
-//	# Scenario 4: Public Client (SPA/mobile), PKCE mandatory, no secret
+//	# 场景 4：公共客户端（SPA/移动端），必须使用 PKCE，无密钥
 //	go run main.go -mode=public \
 //	  -client-id=spa-app-001
 //
-//	# Scenario 5: Public Client WITHOUT PKCE — negative test, IAM must reject
-//	# this at /authorize with "PKCE (code_challenge) is required for public clients"
+//	# 场景 5：公共客户端但未使用 PKCE - 负向测试，IAM 必须在 /authorize 阶段拒绝
 //	go run main.go -mode=public-no-pkce \
 //	  -client-id=spa-app-001
 //
-// Then open http://127.0.0.1:9999/start in your browser, log in,
-// and you'll land on /callback with ready-to-copy curl commands
-// (or, for negative-test scenarios, IAM's rejection reason).
+// 启动后在浏览器中打开 http://127.0.0.1:9999/start，登录后将在 /callback 页面看到可直接复制的 curl 命令。
 package main
 
 import (
@@ -59,7 +55,7 @@ type session struct {
 
 var (
 	mu       sync.Mutex
-	sessions = map[string]*session{} // key: state
+	sessions = map[string]*session{}
 )
 
 func randomURLSafe(n int) string {
@@ -75,13 +71,13 @@ func pkceChallenge(verifier string) string {
 
 func main() {
 	var (
-		authorizeURL = flag.String("authorize-url", "http://127.0.0.1:26824/api/v1/oauth/authorize", "full URL of IAM's /oauth/authorize endpoint")
-		tokenURL     = flag.String("token-url", "http://127.0.0.1:26824/api/v1/oauth/token", "full URL of IAM's /oauth/token endpoint")
-		clientID     = flag.String("client-id", "test-client", "client_id already registered in IAM")
-		clientSecret = flag.String("client-secret", "", "client_secret; ignored/must be empty for -mode=public* and -mode=confidential-no-secret")
-		redirectURI  = flag.String("redirect-uri", "http://127.0.0.1:9999/callback", "must match the redirect_uri registered in IAM exactly")
-		modeFlag     = flag.String("mode", string(modeConfidentialBody), "confidential-basic | confidential-body | confidential-no-secret | public | public-no-pkce")
-		addr         = flag.String("addr", "127.0.0.1:9999", "local address this server listens on")
+		authorizeURL = flag.String("authorize-url", "http://127.0.0.1:26824/api/v1/oauth/authorize", "IAM 授权端点完整 URL")
+		tokenURL     = flag.String("token-url", "http://127.0.0.1:26824/api/v1/oauth/token", "IAM 令牌端点完整 URL")
+		clientID     = flag.String("client-id", "test-client", "已在 IAM 注册的 client_id")
+		clientSecret = flag.String("client-secret", "", "客户端密钥；公共客户端及无密钥模式下会被忽略")
+		redirectURI  = flag.String("redirect-uri", "http://127.0.0.1:9999/callback", "必须与 IAM 中注册的回调地址完全一致")
+		modeFlag     = flag.String("mode", string(modeConfidentialBody), "运行模式选择")
+		addr         = flag.String("addr", "127.0.0.1:9999", "本地监听地址")
 	)
 	flag.Parse()
 
@@ -89,20 +85,20 @@ func main() {
 	switch m {
 	case modeConfidentialBasic, modeConfidentialBody:
 		if *clientSecret == "" {
-			log.Fatalf("mode=%s requires -client-secret", m)
+			log.Fatalf("当前模式 %s 需要提供 -client-secret", m)
 		}
 	case modeConfidentialNoSecret:
 		if *clientSecret != "" {
-			log.Printf("⚠️  mode=%s ignores -client-secret; this test intentionally omits it", m)
+			log.Printf("提示：模式 %s 会忽略 -client-secret，此处已自动清空", m)
 			*clientSecret = ""
 		}
 	case modePublic, modePublicNoPKCE:
 		if *clientSecret != "" {
-			log.Printf("⚠️  mode=%s ignores -client-secret; a public client must not hold a secret", m)
+			log.Printf("提示：模式 %s 会忽略 -client-secret，公共客户端不能持有密钥", m)
 			*clientSecret = ""
 		}
 	default:
-		log.Fatalf("unknown -mode=%s (want confidential-basic | confidential-body | confidential-no-secret | public | public-no-pkce)", m)
+		log.Fatalf("未知的 -mode=%s", m)
 	}
 
 	usePKCE := m == modePublic
@@ -132,8 +128,6 @@ func main() {
 		http.Redirect(w, r, target, http.StatusFound)
 	})
 
-	// Callback: IAM redirects back here once the user is authorized —
-	// or, for negative-test modes, redirects back here with an error instead.
 	http.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
@@ -143,17 +137,17 @@ func main() {
 
 			expected := ""
 			if m == modePublicNoPKCE {
-				expected = `<p style="color:green">✅ Expected result for -mode=public-no-pkce: IAM correctly rejected a public client that skipped PKCE.</p>`
+				expected = `<p style="color:green">符合预期：IAM 已成功拒绝未提供 PKCE 的公共客户端。</p>`
 			}
 
-			fmt.Fprintf(w, `<h2>IAM sent back an error</h2><p>error: %s</p><p>description: %s</p>%s`,
+			fmt.Fprintf(w, `<h2>IAM 返回了错误</h2><p>错误码: %s</p><p>描述: %s</p>%s`,
 				html.EscapeString(errCode), html.EscapeString(desc), expected)
 			return
 		}
 
 		if m == modePublicNoPKCE {
 			w.WriteHeader(http.StatusInternalServerError)
-			fmt.Fprintln(w, `<h2 style="color:red">❌ Unexpected: IAM issued a code without requiring PKCE for a public client.</h2><p>The PKCE-required guard in Authorize() is not working — check enum.ApplicationClientTypePublic comparison and app.Type value.</p>`)
+			fmt.Fprintln(w, `<h2>异常：IAM 在公共客户端未提供 PKCE 的情况下签发了授权码。</h2>`)
 			return
 		}
 
@@ -162,51 +156,48 @@ func main() {
 
 		if code == "" {
 			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintln(w, "<p>No code in the callback — something's off in the IAM authorize logic.</p>")
+			fmt.Fprintln(w, "<p>回调中未找到授权码。</p>")
 			return
 		}
 
-		// state check: CSRF guard
 		mu.Lock()
 		sess, ok := sessions[state]
 		if ok {
-			delete(sessions, state) // one-time use, no replay
+			delete(sessions, state)
 		}
 		mu.Unlock()
 
 		if !ok {
 			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintln(w, "<h2 style='color:red'>state check failed</h2><p>This state wasn't issued by this app — could be a CSRF attempt. A real client must reject this.</p>")
+			fmt.Fprintln(w, "<h2>State 校验失败</h2><p>可能存在 CSRF 风险，客户端应予以拒绝。</p>")
 			return
 		}
 
 		var curl, label, note string
 		switch m {
 		case modeConfidentialBasic:
-			label = "Confidential Client — HTTP Basic Auth (RFC 6749 recommended)"
+			label = "机密客户端 - HTTP Basic Auth"
 			curl = buildBasicAuthCurl(*tokenURL, *clientID, *clientSecret, *redirectURI, code, sess.codeVerifier)
-			note = "Credentials go in the Authorization header; client_id/client_secret are absent from the body."
+			note = "凭证放在 Authorization 请求头中。"
 		case modeConfidentialBody:
-			label = "Confidential Client — credentials in request body"
+			label = "机密客户端 - 请求体传参"
 			curl = buildBodyAuthCurl(*tokenURL, *clientID, *clientSecret, *redirectURI, code, sess.codeVerifier)
-			note = "Legacy but RFC-valid: client_id/client_secret sent as form fields."
+			note = "通过表单字段传递 client_id 和 client_secret。"
 		case modeConfidentialNoSecret:
-			label = "Confidential Client — NO secret (negative test, IAM must reject)"
+			label = "机密客户端 - 无密钥（负向测试，应被拒绝）"
 			curl = buildBodyAuthCurl(*tokenURL, *clientID, "", *redirectURI, code, sess.codeVerifier)
-			note = "This client is registered as confidential but sends no client_secret at all. " +
-				"POST this curl and confirm the token endpoint returns invalid_client / ClientSecretWrong — " +
-				"if it succeeds instead, ValidateClient's empty-secret check is broken."
+			note = "未提供 client_secret，请执行该 curl 确认令牌端点返回 invalid_client 错误。"
 		case modePublic:
-			label = "Public Client — PKCE only, no secret"
+			label = "公共客户端 - 仅 PKCE，无密钥"
 			curl = buildBodyAuthCurl(*tokenURL, *clientID, "", *redirectURI, code, sess.codeVerifier)
-			note = "No client_secret anywhere. Security relies entirely on the PKCE code_verifier below."
+			note = "安全性完全依赖下方的 code_verifier。"
 		}
 
 		fmt.Fprintf(w, `
-<h2>Got the OAuth code</h2>
-<p><b>mode:</b> %s</p>
-<p><b>code:</b> %s</p>
-<p><b>state check:</b> passed (verified locally against generated state)</p>
+<h2>已获取授权码</h2>
+<p><b>模式:</b> %s</p>
+<p><b>授权码:</b> %s</p>
+<p><b>State 校验:</b> 通过</p>
 %s
 
 <hr/>
@@ -225,7 +216,7 @@ func main() {
 	})
 
 	startURL := fmt.Sprintf("http://%s/start", *addr)
-	log.Printf("🚀 test app is up [mode=%s], open this in your browser to start:\n   %s\n", m, startURL)
+	log.Printf("测试服务已启动 [模式=%s]，请在浏览器中打开: %s\n", m, startURL)
 	if err := http.ListenAndServe(*addr, nil); err != nil {
 		log.Fatal(err)
 	}

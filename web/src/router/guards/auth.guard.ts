@@ -9,11 +9,21 @@ export function setupAuthGuard(router: Router) {
 
     const userStore = useUserStore()
 
-    if (!userStore.userInfo) {
-      await userStore.getUserInfo()
+    try {
+      if (!userStore.userInfo) {
+        await userStore.getUserInfo()
+      }
+    } catch {
+      userStore.clearUserInfo()
+      return { name: 'login' }
     }
 
-    const allowedForNonSystem = ['dashboard', 'Login', 'NotFound', 'profile']
+    if (!userStore.userInfo) {
+      userStore.clearUserInfo()
+      return { name: 'login' }
+    }
+
+    const allowedForNonSystem = ['dashboard', 'login', 'NotFound', 'profile']
 
     if (!userStore.isSystem && to.name && !allowedForNonSystem.includes(to.name as string)) {
       return { name: 'dashboard' }

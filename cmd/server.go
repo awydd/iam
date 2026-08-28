@@ -17,21 +17,21 @@ import (
 
 var serverCmd = &cobra.Command{
 	Use:   "server",
-	Short: "Run IAM server",
+	Short: "运行 IAM 服务端",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := writePID(); err != nil {
-			return fmt.Errorf("failed to write PID file: %w", err)
+			return fmt.Errorf("写入 PID 文件失败: %w", err)
 		}
 
 		if err := setup(); err != nil {
 			removePID()
-			return fmt.Errorf("failed to init: %w", err)
+			return fmt.Errorf("初始化失败: %w", err)
 		}
 		defer release()
 		defer removePID()
 
 		if err := server(); err != nil {
-			return fmt.Errorf("server error: %w", err)
+			return fmt.Errorf("服务端错误: %w", err)
 		}
 		return nil
 	},
@@ -50,7 +50,7 @@ func server() error {
 	app := wire.InitApp(database.DB())
 	srv, err := httpserver.New(&conf.Get().HTTP, app)
 	if err != nil {
-		return fmt.Errorf("create http server failed: %w", err)
+		return fmt.Errorf("创建 HTTP 服务失败: %w", err)
 	}
 
 	errCh := make(chan error, 1)
@@ -66,13 +66,13 @@ func server() error {
 	case <-ctx.Done():
 	case err := <-errCh:
 		stop()
-		return fmt.Errorf("http server error: %w", err)
+		return fmt.Errorf("HTTP 服务错误: %w", err)
 	}
 
 	logger.Info("shutting down server...")
 
 	if err := srv.Shutdown(context.Background()); err != nil {
-		logger.Error("graceful shutdown failed: %s", err)
+		logger.Error("优雅关闭失败: %s", err)
 	}
 
 	logger.Info("server exited")
