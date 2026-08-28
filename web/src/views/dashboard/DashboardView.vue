@@ -1,24 +1,15 @@
 <script setup lang="ts">
-import { fetchMe } from '@/api/modules/user'
-import type { UserMeResp } from '@/api/types/user'
-import { reportError } from '@/utils/message'
+import { useUserStore } from '@/stores/user'
+import { storeToRefs } from 'pinia'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
+const userStore = useUserStore()
+const { userInfo, loading } = storeToRefs(userStore)
 
-const userInfo = ref<UserMeResp | null>(null)
-const loading = ref(true)
-
-onMounted(async () => {
-  try {
-    const { data } = await fetchMe()
-    if (data.status) {
-      userInfo.value = data.data
-    }
-  } catch (error) {
-    reportError(error)
-  } finally {
-    loading.value = false
+onMounted(() => {
+  if (!userInfo.value) {
+    userStore.getUserInfo()
   }
 })
 </script>

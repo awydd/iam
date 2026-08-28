@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import Header from './components/Header.vue'
-import Sidebar from './components/Sidebar.vue'
+import Header from './components/HeaderView.vue'
+import Sidebar from './components/SidebarView.vue'
 
 const isCollapsed = ref(false)
 
