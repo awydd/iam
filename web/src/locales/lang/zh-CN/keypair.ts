@@ -12,9 +12,4 @@ export default {
   downgradeConfirm: '降级后该密钥将不再用于新签名，仅用于验证旧 token，确定继续吗？',
   retire: '停用',
   retireConfirm: '停用后该密钥将完全失效，确定继续吗？',
-  status: {
-    active: '生效中',
-    grace: '过渡期',
-    retired: '已停用',
-  },
 }

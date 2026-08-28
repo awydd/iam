@@ -2,8 +2,8 @@
 import type { UserCreateReq, UserListItemResp, UserUpdateReq } from '@/api/types/user'
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import UserCreateDialog from './components/UserCreateDialog.vue'
-import UserUpdateDialog from './components/UserUpdateDialog.vue'
+import CreateDialog from './components/CreateDialog.vue'
+import UpdateDialog from './components/UpdateDialog.vue'
 import { useUserList } from './components/useUserList.ts'
 import { useUserSessions } from './components/useUserSessions.ts'
 import { useUserStatusOptions } from './components/useUserStatusOptions.ts'
@@ -167,13 +167,13 @@ onMounted(() => {
       />
     </el-card>
 
-    <UserCreateDialog
+    <CreateDialog
       v-model:visible="createDialogVisible"
       v-model:submitting="submitting"
       @submit="handleCreateSubmit"
     />
 
-    <UserUpdateDialog
+    <UpdateDialog
       v-model:visible="updateDialogVisible"
       v-model:submitting="submitting"
       :row="editingRow"

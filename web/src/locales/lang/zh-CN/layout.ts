@@ -6,7 +6,6 @@ export default {
   menus: {
     dashboard: '控制台',
     user: '用户',
-    role: '角色',
     application: '应用',
     token: '令牌',
     profile: '个人中心',

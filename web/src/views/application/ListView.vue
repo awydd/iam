@@ -7,7 +7,7 @@ import type {
 import { ElMessageBox } from 'element-plus'
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import ApplicationFormDialog from './components/ApplicationFormDialog.vue'
+import FormDialog from './components/FormDialog.vue'
 import { useApplicationList } from './components/useApplicationList.ts'
 
 const { t } = useI18n()
@@ -150,7 +150,7 @@ fetchList()
       />
     </el-card>
 
-    <ApplicationFormDialog
+    <FormDialog
       v-model:visible="dialogVisible"
       v-model:submitting="submitting"
       :mode="dialogMode"
