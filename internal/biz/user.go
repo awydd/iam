@@ -18,6 +18,8 @@ import (
 )
 
 type UserStore interface {
+	List(ctx context.Context, keyword string, page, perPage int) ([]*db.User, int, error)
+
 	Get(ctx context.Context, id int) (*db.User, error)
 	GetByUsername(ctx context.Context, username string) (*db.User, error)
 	GetByUUID(ctx context.Context, id uuid.UUID) (*db.User, error)
@@ -26,9 +28,13 @@ type UserStore interface {
 
 	Duplicate(ctx context.Context, username, email string, id ...int) (bool, error)
 
+	Create(ctx context.Context, username, email, passwordHash string, status enum.UserStatus) (*db.User, error)
+
 	Update(ctx context.Context, id int, username, email string, status enum.UserStatus, hashed string) (*db.User, error)
 	UpdateLastLogin(ctx context.Context, id int, at time.Time) error
 	UpdatePassword(ctx context.Context, id int, hashed string) error
+
+	Delete(ctx context.Context, id int) error
 }
 
 type TokenSigner interface {
@@ -541,4 +547,139 @@ func (b *UserBiz) CheckSession(ctx context.Context, sid string) (userID int, use
 	}
 
 	return payload.UserID, payload.UserUUID, true
+}
+
+type UserListItemResp struct {
+	ID       int             `json:"id"`
+	Username string          `json:"username"`
+	Email    string          `json:"email"`
+	Status   enum.UserStatus `json:"status"`
+	IsSystem bool            `json:"is_system"`
+}
+
+func (b *UserBiz) List(ctx context.Context, keyword string, page, perPage int) ([]UserListItemResp, int, error) {
+	list, count, err := b.store.List(ctx, keyword, page, perPage)
+	if err != nil {
+		return nil, 0, errors.New("failed to get list")
+	}
+
+	sysUser, _ := b.store.GetSystem(ctx)
+
+	listRes := make([]UserListItemResp, 0, len(list))
+	for _, item := range list {
+		listRes = append(listRes, UserListItemResp{
+			ID:       item.ID,
+			Username: item.Username,
+			Email:    item.Email,
+			Status:   item.Status,
+			IsSystem: sysUser != nil && sysUser.ID == item.ID,
+		})
+	}
+
+	return listRes, count, nil
+}
+
+type UserInfoResp struct {
+	ID       int       `json:"id"`
+	Username string    `json:"username"`
+	Email    string    `json:"email"`
+	UUID     uuid.UUID `json:"uuid"`
+}
+
+func (b *UserBiz) Info(ctx context.Context, id int) (*UserInfoResp, error) {
+	info, err := b.store.Get(ctx, id)
+	if err != nil {
+		if db.IsNotFound(err) {
+			return nil, errors.New("user not found")
+		}
+		return nil, fmt.Errorf("get user: %w", err)
+	}
+	return &UserInfoResp{
+		ID:       info.ID,
+		Username: info.Username,
+		Email:    info.Email,
+		UUID:     info.UUID,
+	}, nil
+}
+
+func (b *UserBiz) Create(ctx context.Context, username, email, passwordStr string, status enum.UserStatus) error {
+	exists, err := b.store.Duplicate(ctx, username, email)
+	if err != nil {
+		return fmt.Errorf("check duplicate: %w", err)
+	}
+	if exists {
+		return errors.New("username or email already exists")
+	}
+
+	hashed, err := password.Hash(passwordStr)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+
+	_, err = b.store.Create(ctx, username, email, hashed, status)
+	if err != nil {
+		return fmt.Errorf("create user: %w", err)
+	}
+	return nil
+}
+
+func (b *UserBiz) Update(ctx context.Context, id int, username, email, passwordStr string, status enum.UserStatus) error {
+	info, err := b.store.Get(ctx, id)
+	if err != nil {
+		if db.IsNotFound(err) {
+			return errors.New("user not found")
+		}
+		return fmt.Errorf("get user: %w", err)
+	}
+
+	if info.IsSystem {
+		return errors.New("system user cannot be updated via this endpoint; use the CLI tool")
+	}
+
+	exists, err := b.store.Duplicate(ctx, username, email, id)
+	if err != nil {
+		return fmt.Errorf("check duplicate: %w", err)
+	}
+	if exists {
+		return errors.New("username or email already exists")
+	}
+
+	hashed := ""
+	if passwordStr != "" {
+		hashed, err = password.Hash(passwordStr)
+		if err != nil {
+			return fmt.Errorf("hash password: %w", err)
+		}
+	}
+
+	_, err = b.store.Update(ctx, id, username, email, status, hashed)
+	if err != nil {
+		if db.IsNotFound(err) {
+			return errors.New("user not found")
+		}
+		return fmt.Errorf("update user: %w", err)
+	}
+
+	if status != enum.UserStatusActive {
+		_ = b.InvalidateAllSessions(ctx, id)
+	}
+
+	return nil
+}
+
+func (b *UserBiz) Delete(ctx context.Context, id int) error {
+	sys, err := b.store.GetSystem(ctx)
+	if err == nil && sys != nil && sys.ID == id {
+		return errors.New("cannot delete system user")
+	}
+
+	if err := b.store.Delete(ctx, id); err != nil {
+		if db.IsNotFound(err) {
+			return errors.New("user not found")
+		}
+		return fmt.Errorf("delete user: %w", err)
+	}
+
+	_ = b.InvalidateAllSessions(ctx, id)
+	return nil
 }

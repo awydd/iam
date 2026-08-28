@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -20,6 +21,44 @@ type UserStore struct {
 
 func NewUserStore(client *db.Client) *UserStore {
 	return &UserStore{baseStore: newBaseStore(client)}
+}
+
+func (s *UserStore) List(ctx context.Context, keyword string, page, perPage int) ([]*db.User, int, error) {
+	q := s.Client(ctx).User.Query().
+		Where(user.DeletedAtIsNil())
+
+	if keyword != "" {
+		q = q.Where(
+			user.Or(
+				user.UsernameContainsFold(keyword),
+				user.EmailContainsFold(keyword),
+			),
+		)
+	}
+
+	total, err := q.Clone().Count(ctx)
+	if err != nil {
+		return nil, 0, fmt.Errorf("count users: %w", err)
+	}
+	if total == 0 {
+		return []*db.User{}, 0, nil
+	}
+
+	offset, limit, ok := paginate(total, page, perPage)
+	if !ok {
+		return []*db.User{}, total, nil
+	}
+
+	list, err := q.
+		Order(db.Desc(user.FieldID)).
+		Offset(offset).
+		Limit(limit).
+		All(ctx)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list users: %w", err)
+	}
+
+	return list, total, nil
 }
 
 func (s *UserStore) Get(ctx context.Context, id int) (*db.User, error) {
@@ -110,6 +149,20 @@ func (s *UserStore) Duplicate(ctx context.Context, username, email string, id ..
 	return exist, nil
 }
 
+func (s *UserStore) Create(ctx context.Context, username, email, passwordHash string, status enum.UserStatus) (*db.User, error) {
+	res, err := s.Client(ctx).User.Create().
+		SetEmail(email).
+		SetUsername(username).
+		SetPassword([]byte(passwordHash)).
+		SetStatus(status).
+		SetIsSystem(false).
+		Save(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("create user: %w", err)
+	}
+	return res, nil
+}
+
 func (s *UserStore) InitCreate(ctx context.Context, username, email, passwordHash string, status enum.UserStatus) (*db.User, error) {
 	client := s.Client(ctx)
 
@@ -168,6 +221,24 @@ func (s *UserStore) UpdatePassword(ctx context.Context, id int, hashed string) e
 		SetPassword([]byte(hashed)).
 		Exec(ctx); err != nil {
 		return fmt.Errorf("update password for user %d: %w", id, err)
+	}
+	return nil
+}
+
+func (s *UserStore) Delete(ctx context.Context, id int) error {
+	info, err := s.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	if info.IsSystem {
+		return errors.New("system user cannot be deleted")
+	}
+
+	if err := s.Client(ctx).User.UpdateOneID(id).
+		SetDeletedAt(time.Now()).
+		Exec(ctx); err != nil {
+		return fmt.Errorf("delete user %d: %w", id, err)
 	}
 	return nil
 }
