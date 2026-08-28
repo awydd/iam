@@ -7,7 +7,6 @@ export default {
     email: '邮箱',
     status: '状态',
     status_detail: '状态',
-    roles: '所属角色',
   },
   password: {
     title: '修改密码',
@@ -46,11 +45,6 @@ export default {
     passwordRequired: '请输入密码',
     passwordEditHint: '留空表示不修改密码',
     statusRequired: '请选择状态',
-  },
-  status: {
-    pending: '待激活',
-    active: '启用',
-    disabled: '禁用',
   },
   systemUser: '系统用户',
   systemCannotDelete: '系统用户不可删除',

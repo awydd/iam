@@ -10,6 +10,7 @@ import (
 	"github.com/awydd/iam/conf"
 	"github.com/awydd/iam/internal/biz"
 	"github.com/awydd/iam/internal/consts"
+	"github.com/awydd/iam/internal/enum"
 	"github.com/awydd/iam/internal/logger"
 	"github.com/awydd/iam/internal/transport/http/middleware"
 	"github.com/awydd/iam/pkg/response"
@@ -220,7 +221,7 @@ type SessionListReq struct {
 	Pagination
 }
 
-func (h *UserHandler) ListSessions(c *gin.Context) {
+func (h *UserHandler) MySessions(c *gin.Context) {
 	userUUID, ok := middleware.UserUUIDFromContext(c)
 	if !ok {
 		response.Err(c, code.Unauthorized)
@@ -258,7 +259,7 @@ type RevokeSessionPathParams struct {
 	SessionID UUIDParam `uri:"session_id" binding:"required"`
 }
 
-func (h *UserHandler) RevokeSession(c *gin.Context) {
+func (h *UserHandler) RevokeMySession(c *gin.Context) {
 	userUUID, ok := middleware.UserUUIDFromContext(c)
 	if !ok {
 		response.Err(c, code.Unauthorized)
@@ -280,6 +281,150 @@ func (h *UserHandler) RevokeSession(c *gin.Context) {
 	}
 
 	if err := h.userBiz.RevokeSession(ctx, u.ID, uuid.UUID(params.SessionID)); err != nil {
+		response.ErrMessage(c, code.BadRequest, err.Error())
+		return
+	}
+
+	response.OK(c)
+}
+
+type UserListReq struct {
+	Keyword string `form:"keyword,omitempty" binding:"max=26"`
+	Pagination
+}
+
+func (h *UserHandler) List(c *gin.Context) {
+	var params UserListReq
+	if err := c.ShouldBindQuery(&params); err != nil {
+		response.Err(c, code.InvalidParams)
+		return
+	}
+
+	list, count, err := h.userBiz.List(c.Request.Context(), params.Keyword, params.Page, params.PerPage)
+	if err != nil {
+		response.ErrMessage(c, code.BadRequest, err.Error())
+		return
+	}
+
+	response.Success(c, ListResp{
+		Content: list,
+		Count:   count,
+	})
+}
+
+func (h *UserHandler) StatusOptions(c *gin.Context) {
+	response.Success(c, enum.UserStatusOptions())
+}
+
+func (h *UserHandler) Info(c *gin.Context) {
+	var params InfoPathParams
+	if err := c.ShouldBindUri(&params); err != nil {
+		response.Err(c, code.InvalidParams)
+		return
+	}
+
+	info, err := h.userBiz.Info(c.Request.Context(), params.ID)
+	if err != nil {
+		response.ErrMessage(c, code.BadRequest, err.Error())
+		return
+	}
+
+	response.Success(c, info)
+}
+
+type UserCreateReq struct {
+	Username string          `json:"username" binding:"required,max=26"`
+	Email    string          `json:"email" binding:"required,email"`
+	Status   enum.UserStatus `json:"status" binding:"required"`
+	Password string          `json:"password" binding:"required,min=6,max=18"`
+}
+
+func (h *UserHandler) Create(c *gin.Context) {
+	var body UserCreateReq
+	if err := c.ShouldBindJSON(&body); err != nil {
+		response.Err(c, code.InvalidParams)
+		return
+	}
+
+	if !body.Status.Valid() {
+		response.ErrMessage(c, code.BadRequest, "invalid status")
+		return
+	}
+
+	err := h.userBiz.Create(c.Request.Context(), body.Username, body.Email, body.Password, body.Status)
+	if err != nil {
+		response.ErrMessage(c, code.BadRequest, err.Error())
+		return
+	}
+
+	response.OK(c)
+}
+
+type UserUpdatePathParams struct {
+	UserID int `uri:"id" binding:"required"`
+}
+
+type UserUpdateReq struct {
+	Email    string          `json:"email" binding:"required,email"`
+	Username string          `json:"username" binding:"required,max=26"`
+	Status   enum.UserStatus `json:"status" binding:"required"`
+	Password string          `json:"password" binding:"omitempty,min=6,max=18"`
+}
+
+func (h *UserHandler) Update(c *gin.Context) {
+	var params UserUpdatePathParams
+	if err := c.ShouldBindUri(&params); err != nil {
+		response.Err(c, code.InvalidParams)
+		return
+	}
+
+	var body UserUpdateReq
+	if err := c.ShouldBindJSON(&body); err != nil {
+		response.Err(c, code.InvalidParams)
+		return
+	}
+
+	if !body.Status.Valid() {
+		response.ErrMessage(c, code.BadRequest, "invalid status")
+		return
+	}
+
+	err := h.userBiz.Update(c.Request.Context(), params.UserID, body.Username, body.Email, body.Password, body.Status)
+	if err != nil {
+		response.ErrMessage(c, code.BadRequest, err.Error())
+		return
+	}
+
+	response.OK(c)
+}
+
+func (h *UserHandler) Delete(c *gin.Context) {
+	var params DeletePathParams
+	if err := c.ShouldBindUri(&params); err != nil {
+		response.Err(c, code.InvalidParams)
+		return
+	}
+
+	if err := h.userBiz.Delete(c.Request.Context(), params.ID); err != nil {
+		response.ErrMessage(c, code.BadRequest, err.Error())
+		return
+	}
+
+	response.OK(c)
+}
+
+type AdminUserPathParams struct {
+	ID int `uri:"id" binding:"required"`
+}
+
+func (h *UserHandler) RevokeSessions(c *gin.Context) {
+	var pathParams AdminUserPathParams
+	if err := c.ShouldBindUri(&pathParams); err != nil {
+		response.Err(c, code.InvalidParams)
+		return
+	}
+
+	if err := h.userBiz.InvalidateAllSessions(c.Request.Context(), pathParams.ID); err != nil {
 		response.ErrMessage(c, code.BadRequest, err.Error())
 		return
 	}

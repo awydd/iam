@@ -9,7 +9,7 @@ export const staticRoutes: RouteRecordRaw[] = [
   },
   {
     path: '/',
-    component: () => import('@/layouts/Layout.vue'),
+    component: () => import('@/layouts/LayoutView.vue'),
     redirect: '/dashboard',
     children: [
       {
@@ -41,6 +41,12 @@ export const staticRoutes: RouteRecordRaw[] = [
         name: 'applications',
         component: () => import('@/views/application/ListView.vue'),
         meta: { icon: 'grid', name: 'application' },
+      },
+      {
+        path: 'users',
+        name: 'users',
+        component: () => import('@/views/user/ListView.vue'),
+        meta: { icon: 'user', name: 'user' },
       },
     ],
   },

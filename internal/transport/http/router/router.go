@@ -69,8 +69,8 @@ func registerRoutes(r *gin.Engine, app *wire.App) {
 	protected.POST("/auth/logout", app.User.Logout)
 	protected.GET("/auth/me", app.User.Me)
 	protected.PUT("/auth/me/password", app.User.Password)
-	protected.GET("/auth/sessions", app.User.ListSessions)
-	protected.DELETE("/auth/sessions/:session_id", app.User.RevokeSession)
+	protected.GET("/auth/sessions", app.User.MySessions)
+	protected.DELETE("/auth/sessions/:session_id", app.User.RevokeMySession)
 
 	admin := protected.Group("")
 	admin.Use(middleware.RequireSystem(app.UserBiz))
@@ -92,5 +92,13 @@ func registerRoutes(r *gin.Engine, app *wire.App) {
 		admin.PUT("/applications/:id/ttl", app.Application.UpdateTTL)
 		admin.PUT("/applications/:id/secret", app.Application.UpdateSecret)
 		admin.DELETE("/applications/:id", app.Application.Delete)
+
+		admin.GET("/users", app.User.List)
+		admin.GET("/users/status-options", app.User.StatusOptions)
+		admin.GET("/users/:id", app.User.Info)
+		admin.POST("/users", app.User.Create)
+		admin.PUT("/users/:id", app.User.Update)
+		admin.DELETE("/users/:id", app.User.Delete)
+		admin.DELETE("/users/:id/sessions", app.User.RevokeSessions)
 	}
 }

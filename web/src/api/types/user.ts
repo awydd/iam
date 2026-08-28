@@ -17,7 +17,9 @@ export interface UserPasswordReq {
   new_password: string
 }
 
-export interface UserSessionListReq extends Pagination {}
+export interface UserSessionListReq extends Pagination {
+  _brand?: never
+}
 
 export interface UserSessionItemResp {
   session_id: string
@@ -28,4 +30,37 @@ export interface UserSessionItemResp {
   expires_at: string
   last_active_at: string | null
   is_current: boolean
+}
+
+export interface UserListReq extends Pagination {
+  keyword?: string
+}
+
+export interface UserCreateReq {
+  email: string
+  username: string
+  password: string
+  status: string
+}
+
+export interface UserUpdateReq {
+  email: string
+  username: string
+  password: string
+  status: string
+}
+
+export interface UserListItemResp {
+  id: number
+  username: string
+  email: string
+  status: string
+  is_system: boolean
+}
+
+export interface UserInfoResp {
+  id: number
+  username: string
+  uuid: string
+  email: string
 }

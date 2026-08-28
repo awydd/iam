@@ -3,6 +3,7 @@ import { logout } from '@/api/modules/auth'
 import { SUPPORTED_LOCALES, type SupportedLocale } from '@/locales'
 import { useLocaleStore } from '@/stores/locale'
 import { useThemeStore } from '@/stores/theme'
+import { useUserStore } from '@/stores/user'
 import { reportError } from '@/utils/message'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -21,6 +22,7 @@ const router = useRouter()
 const { t } = useI18n()
 const localeStore = useLocaleStore()
 const themeStore = useThemeStore()
+const userStore = useUserStore()
 
 const isFullscreen = ref(false)
 
@@ -66,6 +68,8 @@ async function handleLogout() {
     })
 
     await logout()
+
+    userStore.clearUserInfo()
 
     ElMessage.success(t('layout.logoutSuccess'))
     router.push('/login')

@@ -4,17 +4,29 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { RouteRecordRaw } from 'vue-router'
 import { useRoute, useRouter } from 'vue-router'
+import { useUserStore } from '@/stores/user'
 
 defineProps<{ collapsed: boolean }>()
 
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
+const userStore = useUserStore()
 
 const menuRoutes = computed<RouteRecordRaw[]>(() => {
   const layoutRoute = router.options.routes.find(r => r.path === '/')
   const children = layoutRoute?.children ?? []
-  return children.filter(r => !r.meta?.public && !r.meta?.hidden)
+  return children.filter(r => {
+    if (r.meta?.public || r.meta?.hidden) {
+      return false
+    }
+
+    if (!userStore.isSystem) {
+      return r.path === 'dashboard' || r.name === 'dashboard'
+    }
+
+    return true
+  })
 })
 
 const activeMenu = computed(() => {
